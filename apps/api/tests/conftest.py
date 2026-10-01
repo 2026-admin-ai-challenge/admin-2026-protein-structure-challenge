@@ -1,8 +1,29 @@
-import os,tempfile
+import os,tempfile,json,zipfile
 from pathlib import Path
 from datetime import datetime,timezone,timedelta
 os.environ.setdefault("SECRET_KEY","test-only-secret-with-more-than-thirty-two-characters")
 os.environ.setdefault("DATABASE_URL","sqlite://")
+_test_data=tempfile.TemporaryDirectory(prefix="admin-api-test-")
+_data_dir=Path(_test_data.name)
+os.environ["DATA_DIR"]=str(_data_dir)
+public=_data_dir/"public";private=_data_dir/"private"
+public.mkdir();private.mkdir()
+(public/"metadata.json").write_text(json.dumps({"labels":["1.10","3.40"]}))
+(public/"train.csv").write_text("id,sequence,label\nTRAIN_1,AAAA,1.10\nTRAIN_2,CCCC,3.40\n")
+(public/"test.csv").write_text("id,sequence\nTEST_1,AAAA\nTEST_2,CCCC\nTEST_3,GGGG\nTEST_4,TTTT\n")
+(public/"sample_submission.csv").write_text("id,label\nTEST_1,1.10\nTEST_2,1.10\nTEST_3,1.10\nTEST_4,1.10\n")
+(private/"labels.csv").write_text("id,label,partition\nTEST_1,1.10,public\nTEST_2,3.40,public\nTEST_3,1.10,private\nTEST_4,3.40,private\n")
+for filename in ["train_features.csv","test_features.csv","validation_split.csv"]:
+    (public/filename).write_text("id,value\n")
+for filename in ["class_distribution.png","sequence_length_distribution.png"]:
+    (public/filename).write_bytes(b"placeholder image")
+for filename in ["train_structures.zip","test_structures.zip","starter_kit.zip"]:
+    with zipfile.ZipFile(public/filename,"w"):
+        pass
+with zipfile.ZipFile(public/"baseline_code.zip","w") as archive:
+    for filename in ["baseline.py","structure_features.py","README.md","structure-format.md","requirements.txt"]:
+        archive.writestr(filename,"# Test-only code archive\n")
+    archive.writestr("baseline.ipynb",json.dumps({"cells":[{"cell_type":"code","outputs":[]}] }))
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
