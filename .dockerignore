@@ -1,0 +1,8 @@
+.git
+.env
+**/node_modules
+**/.next
+**/__pycache__
+data/private
+data/raw
+work

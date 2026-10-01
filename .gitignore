@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+.next/
+*.db
+*.log
+data/raw/
+data/private/*
+!data/private/.gitignore
+work/
+.DS_Store
+*.tsbuildinfo
+
+# Generated competition files are released by the API only during the event.
+data/public/*
+!data/public/.gitkeep
