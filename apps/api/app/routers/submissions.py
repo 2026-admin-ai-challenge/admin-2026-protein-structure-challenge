@@ -12,7 +12,7 @@ from .. import storage, zipcheck
 from ..config import MAX_ZIP_BYTES
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Settings, Submission, Team, User, now
+from ..models import Settings, Submission, SubmissionFile, Team, User, now
 from ..security import current_user, rate_limit
 from .common import queue_positions, submission_open, submission_view, used_attempts
 
@@ -52,8 +52,11 @@ def accept(db, user, filename, key, temporary, size, digest):
     if used_attempts(db, team.id) >= settings.team_submission_limit:
         raise ApiError(429, "limit_reached", "팀의 제출 횟수를 모두 사용했습니다.")
     final = storage.commit(temporary, key)
-    row = Submission(user_id=user.id, team_id=team.id, filename=filename, status="queued", storage_key=key,
-                     sha256=digest, size_bytes=size, counted=True, created_at=stamp)
+    row = Submission(user_id=user.id, team_id=team.id, filename=filename, status="queued", counted=True, created_at=stamp)
+    # The file record shares team_id and submission_id with the submission and is written
+    # in the same transaction, so neither can exist without the other.
+    row.file = SubmissionFile(team_id=team.id, uploaded_by=user.id, original_filename=filename, storage_key=key,
+                              sha256=digest, size_bytes=size, created_at=stamp)
     db.add(row)
     try:
         db.commit()

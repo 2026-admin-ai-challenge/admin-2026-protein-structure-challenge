@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { send } from "../../lib/api";
+import { fileSize } from "../../format";
 import type { AdminTeam, IssuedAccount } from "../../types";
 import Feedback from "./Feedback";
 import { useAdminData } from "./useAdmin";
@@ -174,7 +175,10 @@ export default function AccountsSection({
                 </td>
                 <td>
                   {team.used} / {team.limit}
-                  <small className="row-error muted">접수 {team.submissions}건</small>
+                  <small className="row-error muted">
+                    접수 {team.submissions}건 · ZIP {team.files}개{" "}
+                    {fileSize(team.storage_bytes)}
+                  </small>
                 </td>
                 <td className="score">{team.best_public?.toFixed(5) ?? "—"}</td>
                 <td>

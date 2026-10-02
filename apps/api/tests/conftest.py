@@ -5,6 +5,7 @@ import tempfile
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 os.environ.setdefault("SECRET_KEY", "test-only-secret-with-more-than-thirty-two-characters")
 os.environ.setdefault("DATABASE_URL", "sqlite://")
@@ -68,8 +69,9 @@ def make_zip(files=None, extra=None):
 
 
 def upload(client, content=None, name="code.zip"):
+    # The browser URL-encodes the file name, which is how non-ASCII names travel in a header.
     return client.post("/api/submissions", content=make_zip() if content is None else content,
-                       headers={"X-Filename": name, "Content-Type": "application/zip"})
+                       headers={"X-Filename": quote(name), "Content-Type": "application/zip"})
 
 
 @pytest.fixture

@@ -79,3 +79,15 @@ class CountedPatch(BaseModel):
 
 class LockPatch(BaseModel):
     locked: bool
+
+
+class FileDelete(BaseModel):
+    reason: str = Field(min_length=2, max_length=300)
+
+    @field_validator("reason")
+    @classmethod
+    def valid_reason(cls, v):
+        v = v.strip()
+        if len(v) < 2:
+            raise ValueError("삭제 사유를 2자 이상 적어 주세요.")
+        return v

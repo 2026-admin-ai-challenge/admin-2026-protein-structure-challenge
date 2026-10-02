@@ -26,6 +26,7 @@ export type Submission = {
   counted: boolean;
   size_bytes: number | null;
   sha256: string | null;
+  file_deleted: boolean;
   evaluator: string | null;
   queue_position: number | null;
   created_at: string;
@@ -42,8 +43,24 @@ export type AdminSubmission = Submission & {
   user: string;
   attempts: number;
   worker_id: string | null;
+  file_id: number | null;
+  on_leaderboard: boolean;
   log_tail?: string | null;
   file_present?: boolean;
+  file_deleted_at?: string | null;
+  file_deleted_by?: string | null;
+  file_delete_reason?: string | null;
+};
+type FileRef = { file_id: number; submission_id: number; team_id: number };
+export type FileCheck = {
+  ok: boolean;
+  checked: number;
+  missing: FileRef[];
+  size_mismatch: FileRef[];
+  hash_mismatch: FileRef[];
+  deleted_present: FileRef[];
+  orphans: string[];
+  stale_uploads: number;
 };
 export type Settings = {
   is_open: boolean;
@@ -105,6 +122,8 @@ export type AdminTeam = {
   limit: number;
   submissions: number;
   best_public: number | null;
+  files: number;
+  storage_bytes: number;
 };
 export type WorkerInfo = {
   id: string;

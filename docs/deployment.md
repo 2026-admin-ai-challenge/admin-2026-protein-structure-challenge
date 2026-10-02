@@ -83,7 +83,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 
 ## DB 마이그레이션
 
-`alembic upgrade head`는 API가 시작할 때 자동 실행됩니다. `0002`는 CSV 프로토타입 스키마를 모델 제출 방식으로 바꿉니다(아이디 로그인, 팀당 여러 계정, 제출 상태·저장 정보, 조작 기록, worker 상태). 프로토타입 시절의 제출은 `evaluator='csv'`로 남고 순위에 들어가지 않습니다. **실제 대회는 새 DB로 시작하는 것을 권장합니다.**
+`alembic upgrade head`는 API가 시작할 때 자동 실행됩니다. `0003`은 제출 파일 정보를 `submission_files` 테이블로 옮깁니다(`team_id`, `submission_id`로 연결, 삭제 기록 포함). `0002`는 CSV 프로토타입 스키마를 모델 제출 방식으로 바꿉니다(아이디 로그인, 팀당 여러 계정, 제출 상태·저장 정보, 조작 기록, worker 상태). 프로토타입 시절의 제출은 `evaluator='csv'`로 남고 순위에 들어가지 않습니다. **실제 대회는 새 DB로 시작하는 것을 권장합니다.**
 
 되돌리기는 `docker compose exec api alembic downgrade 0001`입니다. 팀당 계정이 둘 이상이면 옛 스키마의 제약 때문에 실패하므로, 되돌리기 전에 백업을 받아 두세요.
 
@@ -112,6 +112,7 @@ docker compose ps
 docker compose logs --tail 100 worker
 docker compose exec -T -w /srv/apps/api api python /srv/scripts/postgres_smoke.py   # 임시 DB로 전체 흐름 점검
 docker compose exec -w /srv api pytest -q -c /srv/apps/api/pytest.docker.ini
+docker compose exec api python -m app.check_files          # 저장된 ZIP과 DB 기록 비교
 ```
 
 `postgres_smoke.py`는 무작위 이름의 시험용 DB만 만들고 지웁니다. 대회 데이터는 건드리지 않습니다.

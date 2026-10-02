@@ -111,7 +111,7 @@
 
 ```json
 {"id": 41, "filename": "code.zip", "status": "queued", "failure_code": null, "error_message": null,
- "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "evaluator": null,
+ "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
  "queue_position": 3, "created_at": "…", "started_at": null, "finished_at": null,
  "used": 4, "limit": 10, "remaining": 6}
 ```
@@ -145,13 +145,33 @@
 | `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급 |
 | `PATCH /admin/users/{id}` `{"banned"}` | 차단·해제 |
 | `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함 |
-| `GET /admin/submissions/{id}` | 상세 + `log_tail` + ZIP 보관 여부 |
+| `GET /admin/submissions/{id}` | 상세 + `log_tail` + ZIP 보관 여부, 파일 삭제 기록 |
+| `GET /admin/files?team_id=` | 저장된 ZIP 목록과 팀별 보관 개수·용량 |
+| `GET /admin/files/{id}/download` | ZIP 내려받기(재현 심사용). 조작 기록에 남음 |
+| `POST /admin/files/{id}/delete` `{"reason"}` | ZIP 삭제. 기록은 남고 파일만 지움 |
+| `POST /admin/files/verify` | DB 기록과 디스크 비교. 아무것도 바꾸지 않음 |
 | `POST /admin/submissions/{id}/requeue` | 실패한 제출을 다시 채점 |
 | `PATCH /admin/submissions/{id}` `{"counted"}` | 제출 횟수 복구·차감 |
 | `POST /admin/leaderboard/recalculate` | 저장된 점수로 Public 순위 다시 만들기 |
 | `POST /admin/leaderboard/finalize` | 최종 순위 공개. 대회가 닫혀 있고 대기열이 비어야 함 |
 | `GET /admin/dataset` · `POST /admin/dataset/approve` · `/verify` · `/lock` `{"locked"}` | 데이터 버전 확인·승인·변경 검사·잠금 |
 | `GET /admin/audit?limit=` | 조작 기록 |
+
+## 제출 파일 관리
+
+ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_files` 테이블에 있습니다. 이 테이블은 **공유 컬럼** `team_id`로 `teams`와, `submission_id`로 `submissions`와 연결됩니다(제출 하나에 파일 하나).
+
+| 컬럼 | 뜻 |
+| --- | --- |
+| `team_id`, `submission_id`, `uploaded_by` | 소속 팀, 해당 제출, 올린 계정 |
+| `original_filename`, `storage_key` | 참가자가 붙인 이름, 디스크의 무작위 저장 이름 |
+| `sha256`, `size_bytes`, `created_at` | 해시, 크기, 업로드 시각 |
+| `deleted_at`, `deleted_by`, `delete_reason` | 삭제 기록. 비어 있으면 보관 중 |
+
+- 접수할 때 제출 행과 파일 행을 한 트랜잭션으로 씁니다.
+- 제출 응답의 `size_bytes`, `sha256`, `file_deleted`는 이 테이블에서 읽습니다. 관리자 응답에는 `file_id`, `on_leaderboard`가 더 있습니다.
+- 삭제는 관리자만, 사유와 함께 합니다. **순위에 반영된 제출**과 **채점이 끝나지 않은 제출**의 파일은 삭제할 수 없습니다. 삭제해도 점수·기록·제출 횟수는 그대로이고, 그 제출은 다시 채점할 수 없습니다.
+- 자동 삭제는 없습니다. 보관 기간은 운영진 미결정 사항입니다.
 
 ## 순위 규칙
 

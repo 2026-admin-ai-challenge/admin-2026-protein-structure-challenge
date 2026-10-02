@@ -17,6 +17,13 @@ Verified on a Windows 11 development PC with Docker Desktop (8 CPUs, 16 GB), usi
 - API container checked: no `/srv/data/private`, no docker CLI. Worker in mock mode: uid 10001, no Docker socket.
 - Browser (desktop 1024 px and mobile 375 px): login dialog, case-insensitive ID, ZIP upload with confirmation, receipt ID, automatic status refresh to the score, remaining attempts; organizer overview, account issue with one-time password, submissions filter and log view, dataset approval view, audit log. No horizontal overflow at 375 px.
 
+### Submission file table (migration 0003) — 2026-10-02
+
+- 82 tests passed. New coverage: file record written with the submission, team storage usage, organizer-only download with audit, delete rules (ranked and pending files protected, reason required, score and attempt kept, no re-scoring afterwards), disk/database comparison (missing, changed size, orphan).
+- `postgres_smoke.py` on real PostgreSQL: a ZIP submission recorded under the 0002 schema received a file record after upgrading to 0003, and downgrading to 0002 restored the columns.
+- Applied to the running stack after a `pg_dump` backup: `alembic_version` 0003, 11 accounts unchanged, public address still serving.
+- Browser on a separate throwaway stack: team storage usage shown, "ZIP 받기" returned the stored ZIP, delete was disabled for the ranked submission, deleting another asked for a reason and then showed "파일 삭제됨" with who, when and why, and the file check reported the remaining ZIPs as consistent.
+
 ## CSV prototype and dataset records — 2026-10-01
 
 - Official CATH v4.4 FASTA (6,552,513 bytes) and classifications (44,606,235 bytes) downloaded and SHA-256 recorded.

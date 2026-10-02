@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, send } from "../../lib/api";
 import { date, fileSize } from "../../format";
-import type { AdminSubmission } from "../../types";
+import { isPending } from "../../lib/status";
+import type { AdminSubmission, FileCheck } from "../../types";
 import StatusPill from "../StatusPill";
 import Feedback from "./Feedback";
 import { useAdminData } from "./useAdmin";
@@ -32,7 +33,8 @@ export default function SubmissionsSection({
     [failureCode, setFailureCode] = useState(""),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
-    [detail, setDetail] = useState<AdminSubmission | null>(null);
+    [detail, setDetail] = useState<AdminSubmission | null>(null),
+    [fileCheck, setFileCheck] = useState<FileCheck | null>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (detail) box.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -91,8 +93,36 @@ export default function SubmissionsSection({
           <input value={search} onChange={(e) => setSearch(e.target.value)} />
         </label>
         <button className="btn secondary">검색</button>
+        <button
+          type="button"
+          className="btn secondary"
+          disabled={busy}
+          onClick={() =>
+            run(async () =>
+              setFileCheck(await send<FileCheck>("/admin/files/verify")),
+            )
+          }
+        >
+          파일 정합성 검사
+        </button>
       </form>
       <Feedback error={error} notice={notice} loading={loading} />
+      {fileCheck && (
+        <div
+          className={"alert " + (fileCheck.ok ? "success" : "error")}
+          role="status"
+        >
+          {fileCheck.ok
+            ? `보관 중인 ZIP ${fileCheck.checked}개가 DB 기록과 일치합니다.`
+            : `ZIP ${fileCheck.checked}개 검사: 디스크에 없음 ${fileCheck.missing.length}, 크기 다름 ${fileCheck.size_mismatch.length}, 삭제 기록인데 남아 있음 ${fileCheck.deleted_present.length}, 기록 없는 파일 ${fileCheck.orphans.length}. 접수 ID: ${
+                [...fileCheck.missing, ...fileCheck.size_mismatch]
+                  .map((f) => "#" + f.submission_id)
+                  .join(", ") || "—"
+              }`}
+          {fileCheck.stale_uploads > 0 &&
+            ` 중단된 업로드 조각 ${fileCheck.stale_uploads}개.`}
+        </div>
+      )}
       {detail && (
         <div className="secret-box" ref={box}>
           <h3>
@@ -101,8 +131,18 @@ export default function SubmissionsSection({
           <p>
             SHA-256 {detail.sha256 ?? "—"} · {fileSize(detail.size_bytes)} ·
             시도 {detail.attempts}회 · 작업자 {detail.worker_id ?? "—"} · ZIP{" "}
-            {detail.file_present ? "보관 중" : "없음"}
+            {detail.file_deleted
+              ? "삭제됨"
+              : detail.file_present
+                ? "보관 중"
+                : "없음"}
           </p>
+          {detail.file_deleted && detail.file_deleted_at && (
+            <p>
+              파일 삭제: {date(detail.file_deleted_at)} ·{" "}
+              {detail.file_deleted_by} · 사유: {detail.file_delete_reason}
+            </p>
+          )}
           <pre className="log-tail">
             {detail.log_tail || "기록된 실행 로그가 없습니다."}
           </pre>
@@ -143,6 +183,8 @@ export default function SubmissionsSection({
                   {s.filename}
                   <small className="row-error muted">
                     {fileSize(s.size_bytes)} · {s.evaluator ?? "미채점"}
+                    {s.file_deleted ? " · 파일 삭제됨" : ""}
+                    {s.on_leaderboard ? " · 순위 반영" : ""}
                   </small>
                 </td>
                 <td>
@@ -170,7 +212,43 @@ export default function SubmissionsSection({
                     >
                       로그
                     </button>
-                    {s.status === "failed" && (
+                    {s.file_id && !s.file_deleted && (
+                      <>
+                        <a
+                          className="btn secondary compact"
+                          href={`/api/admin/files/${s.file_id}/download`}
+                        >
+                          ZIP 받기
+                        </a>
+                        <button
+                          className="btn secondary compact"
+                          disabled={busy || s.on_leaderboard || isPending(s.status)}
+                          title={
+                            s.on_leaderboard
+                              ? "순위에 반영된 제출의 파일은 삭제할 수 없습니다"
+                              : isPending(s.status)
+                                ? "채점이 끝난 뒤 삭제할 수 있습니다"
+                                : undefined
+                          }
+                          onClick={() => {
+                            const reason = prompt(
+                              `#${s.id} ${s.filename}의 ZIP을 삭제합니다. 점수와 기록은 남고 파일만 지워지며 되돌릴 수 없습니다.\n삭제 사유를 적어 주세요.`,
+                            )?.trim();
+                            if (reason)
+                              run(
+                                () =>
+                                  send(`/admin/files/${s.file_id}/delete`, {
+                                    reason,
+                                  }),
+                                `#${s.id}의 ZIP을 삭제했습니다.`,
+                              );
+                          }}
+                        >
+                          파일 삭제
+                        </button>
+                      </>
+                    )}
+                    {s.status === "failed" && !s.file_deleted && (
                       <button
                         className="btn secondary compact"
                         disabled={busy || finalized}

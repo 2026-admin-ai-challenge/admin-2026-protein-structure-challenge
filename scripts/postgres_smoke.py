@@ -36,19 +36,26 @@ try:
         old.execute("INSERT INTO competitions (id,title) VALUES (1,'t')")
         old.execute("INSERT INTO competition_settings (id,is_open,daily_limit,frozen,finalized) VALUES (1,false,5,false,false)")
         old.execute("INSERT INTO submissions (user_id,team_id,filename,public_score,private_score,status,created_at) VALUES (900,900,'old.csv',0.5,0.5,'success',now())")
+    # A ZIP submission recorded by the 0002 schema must get a file record in 0003.
+    subprocess.run(['alembic','upgrade','0002'],check=True)
+    with psycopg.connect(test_url.replace('postgresql+psycopg://','postgresql://'),autocommit=True) as old:
+        old.execute("INSERT INTO submissions (id,user_id,team_id,filename,status,failure_code,storage_key,sha256,size_bytes,counted,attempts,created_at) VALUES (901,900,900,'old.zip','failed','runtime_error','0123456789abcdef0123456789abcdef',repeat('a',64),1234,true,1,now())")
     subprocess.run(['alembic','upgrade','head'],check=True)
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db import SessionLocal,engine
-    from app.models import User,Team,Settings,Submission
+    from app.models import User,Team,Settings,Submission,SubmissionFile
     from app.security import hasher
     from app.evaluators.mock import MockEvaluator
     from app.worker import process_one,recover_stale
     from sqlalchemy import select,text
     with SessionLocal() as db:
-        migrated=db.scalar(select(User).where(User.id==900)); old_row=db.scalar(select(Submission))
+        migrated=db.scalar(select(User).where(User.id==900)); old_row=db.scalar(select(Submission).where(Submission.filename=='old.csv'))
+        moved=db.get(Submission,901).file
+        assert (moved.team_id,moved.uploaded_by,moved.original_filename,moved.storage_key,moved.size_bytes)==(900,900,'old.zip','0123456789abcdef0123456789abcdef',1234)
+        db.execute(text("SELECT setval(pg_get_serial_sequence('submissions','id'),1000)"))
         assert migrated.username=='old@example.com' and db.get(Settings,1).team_submission_limit==10
-        assert (old_row.status,old_row.evaluator,old_row.counted)==('succeeded','csv',True)
+        assert (old_row.status,old_row.evaluator,old_row.counted,old_row.file)==('succeeded','csv',True,None)
         db.execute(text("SELECT setval(pg_get_serial_sequence('teams','id'),1000)"));db.execute(text("SELECT setval(pg_get_serial_sequence('users','id'),1000)"))
         team=Team(name='Test organizers');db.add(team);db.flush()
         db.add(User(username='test-admin',password_hash=hasher.hash('Test-Admin-Password-42'),display_name='Test Admin',team_id=team.id,role='ADMIN'));db.commit()
@@ -80,25 +87,32 @@ try:
             assert recover_stale(db)==0
             scored=process_one(db,MockEvaluator(),'smoke-worker')
             assert scored.id==accepted['id'] and scored.status=='succeeded' and process_one(db,MockEvaluator(),'smoke-worker') is None
+            stored=db.scalar(select(SubmissionFile).where(SubmissionFile.submission_id==accepted['id']));assert (stored.submission_id,stored.team_id,stored.sha256)==(accepted['id'],scored.team_id,accepted['sha256'])
         history=client.get('/api/submissions/me').json()
         assert len(history['entries'])==1 and history['used']==1 and history['entries'][0]['public_score'] is not None
         board=client.get('/api/leaderboard').json()['entries']
         assert [e['team'] for e in board]==['Integration Test Team'],board  # the prototype CSV score is not ranked
         assert client.get('/api/leaderboard?board=final').status_code==403
         client.cookies.set('admin_session',organizer_cookie)
-        assert client.get('/api/admin/overview').json()['queue']=={'queued':0,'running':0,'succeeded':2,'failed':0}
+        assert client.get('/api/admin/overview').json()['queue']=={'queued':0,'running':0,'succeeded':2,'failed':1}
         assert client.patch('/api/admin/competition',json={'is_open':False}).status_code==200
         assert client.post('/api/admin/leaderboard/finalize').status_code==200
         assert len(client.get('/api/leaderboard?board=final').json()['entries'])==1
         assert client.patch('/api/admin/competition',json={'is_open':True}).status_code==409
         assert len(client.get('/api/admin/audit').json())>=6
         assert client.get('/openapi.json').status_code==200
-        print('PASS: PostgreSQL 0001->0002 migration with prototype data, issued accounts, ZIP intake, concurrent team limit, queue worker, leaderboard, private-score protection, close/finalize, audit log and OpenAPI.')
+        print('PASS: PostgreSQL 0001->0003 migration with prototype data, file records, issued accounts, ZIP intake, concurrent team limit, queue worker, leaderboard, private-score protection, close/finalize, audit log and OpenAPI.')
         print('Mock public score:',history['entries'][0]['public_score'])
     engine.dispose()
     # The rollback path documented for operators must work too.
     with psycopg.connect(test_url.replace('postgresql+psycopg://','postgresql://'),autocommit=True) as cleanup:
-        cleanup.execute("DELETE FROM leaderboard_entries");cleanup.execute("DELETE FROM submissions");cleanup.execute("DELETE FROM users WHERE id<>900")
+        cleanup.execute("DELETE FROM leaderboard_entries");cleanup.execute("DELETE FROM submission_files");cleanup.execute("DELETE FROM submissions");cleanup.execute("DELETE FROM users WHERE id<>900")
+    with psycopg.connect(test_url.replace('postgresql+psycopg://','postgresql://'),autocommit=True) as cleanup:
+        cleanup.execute("INSERT INTO submissions (id,user_id,team_id,filename,status,counted,attempts,created_at) VALUES (902,900,900,'kept.zip','queued',true,0,now())")
+        cleanup.execute("INSERT INTO submission_files (team_id,submission_id,uploaded_by,original_filename,storage_key,sha256,size_bytes,created_at) VALUES (900,902,900,'kept.zip','fedcba9876543210fedcba9876543210',repeat('b',64),4321,now())")
+    subprocess.run(['alembic','downgrade','0002'],check=True)
+    with psycopg.connect(test_url.replace('postgresql+psycopg://','postgresql://'),autocommit=True) as check:
+        assert check.execute("SELECT storage_key,size_bytes FROM submissions WHERE id=902").fetchone()==('fedcba9876543210fedcba9876543210',4321)
     subprocess.run(['alembic','downgrade','0001'],check=True)
     subprocess.run(['alembic','upgrade','head'],check=True)
     print('PASS: downgrade to 0001 and upgrade again.')

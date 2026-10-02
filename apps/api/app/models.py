@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .config import DEFAULT_TEAM_SUBMISSION_LIMIT
 from .db import Base
@@ -80,9 +80,6 @@ class Submission(Base):
     public_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     private_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     predictions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    storage_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Whether this submission uses one of the team's attempts.
     counted: Mapped[bool] = mapped_column(Boolean, default=True)
     # Which evaluator produced the score, so mock results never mix with real ones.
@@ -93,6 +90,47 @@ class Submission(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The uploaded ZIP is tracked in its own table. "selectin" loads it with a second
+    # query, so row locks (FOR UPDATE) on submissions keep working.
+    file: Mapped["SubmissionFile | None"] = relationship(back_populates="submission", uselist=False, lazy="selectin")
+
+    @property
+    def file_deleted(self):
+        return bool(self.file and self.file.deleted_at)
+
+    @property
+    def storage_key(self):
+        """Where the ZIP is stored, or None when there is no file or it was deleted."""
+        return self.file.storage_key if self.file and not self.file.deleted_at else None
+
+    @property
+    def sha256(self):
+        return self.file.sha256 if self.file else None
+
+    @property
+    def size_bytes(self):
+        return self.file.size_bytes if self.file else None
+
+
+class SubmissionFile(Base):
+    """One uploaded ZIP. The bytes stay on disk; this row is how the file is managed:
+    which team owns it (team_id), which submission it belongs to (submission_id), where
+    it is stored, and whether and why an organizer deleted it."""
+    __tablename__ = "submission_files"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), unique=True)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    original_filename: Mapped[str] = mapped_column(String(120))
+    storage_key: Mapped[str] = mapped_column(String(80), unique=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # Deleting removes the bytes and keeps this row as the record of what happened.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    delete_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submission: Mapped["Submission"] = relationship(back_populates="file")
 
 
 class LeaderboardEntry(Base):

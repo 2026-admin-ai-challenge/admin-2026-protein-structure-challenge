@@ -3,17 +3,18 @@ from datetime import timedelta
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from .. import storage
+from .. import files, storage
 from ..accounts import create_user, random_password
 from ..audit import record
 from ..dataset import metadata, public_file_report
 from ..db import get_db
 from ..leaderboard import rebuild
-from ..models import AuditLog, LeaderboardEntry, Settings, Submission, Team, User, Worker, now, utc
-from ..schemas import BanPatch, CountedPatch, LockPatch, SettingsPatch, TeamCreate, UserCreate
+from ..models import AuditLog, LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now, utc
+from ..schemas import BanPatch, CountedPatch, FileDelete, LockPatch, SettingsPatch, TeamCreate, UserCreate
 from ..security import admin_user, hasher
 from .common import (PENDING, admin_settings_view, evaluator_name, limits_view, queue_positions, submission_view,
                      used_attempts)
@@ -31,9 +32,10 @@ def account_view(user):
             "role": user.role, "banned": user.banned, "created_at": user.created_at}
 
 
-def admin_submission_view(row, team, user, positions=None):
+def admin_submission_view(row, team, user, positions=None, ranked=frozenset()):
     return {**submission_view(row, positions), "private_score": row.private_score, "team_id": row.team_id,
-            "team": team, "user": user, "attempts": row.attempts, "worker_id": row.worker_id}
+            "team": team, "user": user, "attempts": row.attempts, "worker_id": row.worker_id,
+            "file_id": row.file.id if row.file else None, "on_leaderboard": row.id in ranked}
 
 
 # ---- Overview: settings, queue, workers ---------------------------------------------------
@@ -98,10 +100,12 @@ def teams(admin=Depends(admin_user), db=Depends(get_db)):
     ).all())
     total = dict(db.execute(select(Submission.team_id, func.count(Submission.id)).group_by(Submission.team_id)).all())
     best = dict(db.execute(select(LeaderboardEntry.team_id, LeaderboardEntry.score).where(LeaderboardEntry.board == "public")).all())
+    usage = files.usage_by_team(db)
     return [
         {"id": team.id, "name": team.name, "created_at": team.created_at, "users": users.get(team.id, []),
          "used": used.get(team.id, 0), "limit": settings.team_submission_limit,
-         "submissions": total.get(team.id, 0), "best_public": best.get(team.id)}
+         "submissions": total.get(team.id, 0), "best_public": best.get(team.id),
+         "files": usage.get(team.id, (0, 0))[0], "storage_bytes": usage.get(team.id, (0, 0))[1]}
         for team in db.scalars(select(Team).order_by(Team.id))
     ]
 
@@ -208,9 +212,9 @@ def all_submissions(status: str | None = None, failure_code: str | None = None, 
         if term.isdigit():
             conditions.append(Submission.id == int(term))
         query = query.where(or_(*conditions))
-    positions = queue_positions(db)
+    positions, ranked = queue_positions(db), files.ranked_submission_ids(db)
     rows = db.execute(query.order_by(Submission.id.desc()).limit(max(1, min(limit, 1000)))).all()
-    return [admin_submission_view(row, team, user, positions) for row, team, user in rows]
+    return [admin_submission_view(row, team, user, positions, ranked) for row, team, user in rows]
 
 
 @router.get("/submissions/{id}")
@@ -219,8 +223,13 @@ def submission_detail(id: int, admin=Depends(admin_user), db=Depends(get_db)):
     if not found:
         raise HTTPException(404, "제출을 찾을 수 없습니다.")
     row, team, user = found
-    return {**admin_submission_view(row, team, user, queue_positions(db)), "log_tail": row.log_tail,
-            "file_present": bool(row.storage_key) and storage.path_for(row.storage_key).exists()}
+    detail = admin_submission_view(row, team, user, queue_positions(db), files.ranked_submission_ids(db))
+    stored = row.file
+    return {**detail, "log_tail": row.log_tail,
+            "file_present": bool(row.storage_key) and storage.path_for(row.storage_key).exists(),
+            "file_deleted_at": stored.deleted_at if stored else None,
+            "file_deleted_by": stored.deleted_by if stored else None,
+            "file_delete_reason": stored.delete_reason if stored else None}
 
 
 @router.post("/submissions/{id}/requeue")
@@ -256,6 +265,86 @@ def set_counted(id: int, body: CountedPatch, admin=Depends(admin_user), db=Depen
     record(db, admin, "submission.counted", f"submission:{row.id}", {"counted": body.counted})
     db.commit()
     return {"ok": True, "used": used_attempts(db, row.team_id)}
+
+
+# ---- Stored submission files --------------------------------------------------------------
+
+@router.get("/files")
+def list_files(team_id: int | None = None, limit: int = 500, admin=Depends(admin_user), db=Depends(get_db)):
+    """Every uploaded ZIP with its owner team, plus how much each team is storing."""
+    query = (select(SubmissionFile, Team.name, User.username, Submission.status, Submission.public_score)
+             .join(Team, Team.id == SubmissionFile.team_id).join(User, User.id == SubmissionFile.uploaded_by)
+             .join(Submission, Submission.id == SubmissionFile.submission_id))
+    if team_id:
+        query = query.where(SubmissionFile.team_id == team_id)
+    ranked = files.ranked_submission_ids(db)
+    rows = db.execute(query.order_by(SubmissionFile.id.desc()).limit(max(1, min(limit, 2000)))).all()
+    usage = files.usage_by_team(db)
+    names = dict(db.execute(select(Team.id, Team.name)).all())
+    return {
+        "files": [
+            {"id": f.id, "team_id": f.team_id, "team": team, "submission_id": f.submission_id, "uploaded_by": username,
+             "original_filename": f.original_filename, "sha256": f.sha256, "size_bytes": f.size_bytes,
+             "created_at": f.created_at, "deleted_at": f.deleted_at, "deleted_by": f.deleted_by,
+             "delete_reason": f.delete_reason, "status": status, "public_score": score,
+             "on_leaderboard": f.submission_id in ranked}
+            for f, team, username, status, score in rows
+        ],
+        "teams": [{"team_id": id, "team": names.get(id), "files": count, "storage_bytes": total}
+                  for id, (count, total) in sorted(usage.items())],
+        "total_bytes": sum(total for _, total in usage.values()),
+    }
+
+
+@router.get("/files/{id}/download")
+def download_file(id: int, admin=Depends(admin_user), db=Depends(get_db)):
+    """The stored ZIP, for reproduction review. Organizers only; every download is logged."""
+    stored = db.get(SubmissionFile, id)
+    if not stored:
+        raise HTTPException(404, "파일을 찾을 수 없습니다.")
+    if stored.deleted_at:
+        raise HTTPException(410, "삭제된 파일입니다.")
+    path = storage.path_for(stored.storage_key)
+    if not path.exists():
+        raise HTTPException(409, "저장된 ZIP이 디스크에 없습니다. 파일 정합성 검사를 실행하세요.")
+    record(db, admin, "file.download", f"file:{stored.id}", {"submission": stored.submission_id, "team_id": stored.team_id})
+    db.commit()
+    name = f"team{stored.team_id}-submission{stored.submission_id}-{stored.original_filename}"
+    return FileResponse(path, filename=name, media_type="application/zip")
+
+
+@router.post("/files/{id}/delete")
+def delete_file(id: int, body: FileDelete, admin=Depends(admin_user), db=Depends(get_db)):
+    """Removes the ZIP from disk and keeps the record with who, when and why."""
+    stored = db.scalar(select(SubmissionFile).where(SubmissionFile.id == id).with_for_update())
+    if not stored:
+        raise HTTPException(404, "파일을 찾을 수 없습니다.")
+    if stored.deleted_at:
+        raise HTTPException(409, "이미 삭제된 파일입니다.")
+    submission = db.get(Submission, stored.submission_id)
+    if submission.status in PENDING:
+        raise HTTPException(409, "채점이 끝나지 않은 제출의 파일은 삭제할 수 없습니다.")
+    if stored.submission_id in files.ranked_submission_ids(db):
+        raise HTTPException(409, "순위에 반영된 제출의 파일은 삭제할 수 없습니다.")
+    try:
+        storage.discard(storage.path_for(stored.storage_key))
+    except OSError as error:
+        raise HTTPException(500, f"파일을 삭제하지 못했습니다: {error}")
+    stored.deleted_at, stored.deleted_by, stored.delete_reason = now(), admin.username, body.reason
+    record(db, admin, "file.delete", f"file:{stored.id}",
+           {"submission": stored.submission_id, "team_id": stored.team_id, "reason": body.reason})
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/files/verify")
+def verify_files(admin=Depends(admin_user), db=Depends(get_db)):
+    """Compares records with the disk (presence and size). Changes nothing."""
+    report = files.check(db)
+    summary = {key: len(value) if isinstance(value, list) else value for key, value in report.items()}
+    record(db, admin, "file.verify", "submission files", summary, ok=report["ok"])
+    db.commit()
+    return report
 
 
 # ---- Leaderboard --------------------------------------------------------------------------
