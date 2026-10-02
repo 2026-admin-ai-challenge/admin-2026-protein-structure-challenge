@@ -1,0 +1,32 @@
+# Real scoring. Add this file to run participant inference in isolated containers:
+#
+#   docker build -t admin-evaluator:latest apps/evaluator
+#   docker compose -f docker-compose.yml -f docker-compose.evaluator.yml up --build -d
+#
+# Requires in .env: EVAL_WORK_HOST_DIR (an empty host directory for unpacked submissions)
+# and EVAL_INPUT_HOST_DIR (the hidden evaluation input the data team prepared).
+#
+# The worker controls the host Docker daemon through the socket, which is equivalent to
+# root on the host. Only the worker gets it: never the API, never a participant container.
+services:
+  api:
+    environment:
+      EVALUATOR: docker
+  worker:
+    user: "0:0"
+    environment:
+      EVALUATOR: docker
+      EVAL_IMAGE: ${EVAL_IMAGE:-admin-evaluator:latest}
+      EVAL_CPUS: ${EVAL_CPUS:-4}
+      EVAL_MEMORY: ${EVAL_MEMORY:-8g}
+      EVAL_PIDS: ${EVAL_PIDS:-256}
+      EVAL_TMPFS_SIZE: ${EVAL_TMPFS_SIZE:-1g}
+      EVAL_WORK_DIR: /srv/eval-work
+      EVAL_WORK_HOST_DIR: ${EVAL_WORK_HOST_DIR:?set EVAL_WORK_HOST_DIR to an empty host directory}
+      EVAL_INPUT_HOST_DIR: ${EVAL_INPUT_HOST_DIR:?set EVAL_INPUT_HOST_DIR to the hidden evaluation input directory}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${EVAL_WORK_HOST_DIR}:/srv/eval-work
+      - ${DATA_HOST_DIR:-../admin-2026-protein-data/data}/public:/srv/data/public:ro
+      # Hidden labels and the Public/Private split: readable by the worker only.
+      - ${DATA_HOST_DIR:-../admin-2026-protein-data/data}/private:/srv/data/private:ro

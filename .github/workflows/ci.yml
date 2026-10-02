@@ -19,5 +19,5 @@ jobs:
       - run: pytest -q
       - run: npm ci && npm run build
         working-directory: apps/web
-      - name: Check generated data and secrets are not tracked
-        run: test -z "$(git ls-files 'data/*' '.env' 'data/raw/*')"
+      - name: Check generated data, uploads, account sheets and secrets are not tracked
+        run: test -z "$(git ls-files 'data/*' '.env' 'data/raw/*' 'var/*' 'accounts/participants.csv')"

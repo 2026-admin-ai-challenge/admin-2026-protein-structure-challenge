@@ -1,0 +1,7 @@
+# DRAFT package list for the scoring image. Keep versions pinned and publish this file to
+# participants so their requirements.txt can match it.
+numpy==2.5.3
+pandas==3.0.6
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0

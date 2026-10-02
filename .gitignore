@@ -19,3 +19,10 @@ work/
 # Generated competition files are released by the API only during the event.
 data/public/*
 !data/public/.gitkeep
+
+# Uploaded submission ZIPs, unpacked scoring work and demo files.
+var/
+
+# Account sheets hold plaintext temporary passwords for handing out.
+accounts/*
+!accounts/participants.example.csv
