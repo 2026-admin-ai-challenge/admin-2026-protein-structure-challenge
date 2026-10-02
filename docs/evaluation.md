@@ -1,12 +1,50 @@
-# Evaluation contract
+# 평가 방식
 
-`sklearn.metrics.f1_score(y_true, y_pred, labels=all_architectures, average="macro", zero_division=0)`를 사용합니다. 항상 전체 허용 label 목록을 명시하므로 특정 클래스가 예측되지 않아도 그 클래스가 평균에서 누락되지 않습니다.
+## 지표
 
-UTF-8(BOM 허용) CSV의 column 순서는 정확히 `id,label`. 2 MB 이하. Null, 추가 열, 중복 ID, unknown/missing ID, 허용하지 않은 label을 거부합니다. label은 문자열이며 `1.10`을 `1.1`로 바꾸지 마세요. 제출 행 순서는 자유이며 private answer의 ID 기준으로 안전하게 정렬합니다.
+`sklearn.metrics.f1_score(y_true, y_pred, labels=all_architectures, average="macro", zero_division=0)`를 사용합니다. 항상 전체 허용 label 목록을 명시하므로 특정 클래스가 예측되지 않아도 그 클래스가 평균에서 빠지지 않습니다. 코드는 `apps/api/app/scoring/scorer.py`입니다.
 
-한 참가자의 UTC 하루 제한은 invalid와 success 기록을 모두 셉니다. 인증 실패, 업로드 전체 크기 초과(HTTP 413), 닫힌 대회, 제한 초과는 채점 시도 전에 거절되어 기록되지 않습니다. 에러 메시지를 반환하는 검증 실패는 기록됩니다.
+## 채점 흐름
 
-Public와 Private는 분리 채점하고 일반 응답은 Public만 반환합니다. Public 순위는 팀별 최고 Public, Final 순위는 팀별 최고 Private. 자동으로 가장 높은 점수를 사용하며 최종 제출 선택 UI는 없습니다. 동점은 최고 점수 달성 시각이 빠른 순, 그 뒤 제출 ID 순입니다. 표시는 5자리, 내부 순위는 전체 float 정밀도입니다.
+1. **접수(API)**: ZIP을 웹 공개 경로 밖에 저장하고 해시·크기·팀·시각을 기록한 뒤 `queued`로 둡니다. 모델은 실행하지 않습니다.
+2. **실행(worker)**: 별도 프로세스가 대기열에서 하나씩 꺼내 `running`으로 바꾸고, 격리 컨테이너에서 추론 코드를 실행합니다.
+3. **채점(worker)**: 컨테이너가 쓴 예측 파일을 컨테이너 **밖**에서 검사하고 숨긴 정답과 비교해 Public·Private 점수를 계산합니다.
+4. **기록**: 점수 또는 실패 코드를 DB에 저장하고 Public 순위를 갱신합니다.
 
-Freeze는 순위 snapshot만 동결하며 제출·개인 Public score는 계속 이용 가능합니다. Unfreeze에서 최신 순위를 재구성합니다. 차단된 계정은 동결 중에도 순위 조회에서 제외됩니다. Finalize는 닫힌 상태에서만 허용되며 최종 snapshot 이후 제출, 계정 상태 변경, 재계산, 대회 재개를 거부합니다.
-> **기존 CSV 제출 프로토타입 문서입니다.** 새 대회의 팀당 10회·모델 추론 채점 정책으로 갱신해야 합니다.
+정답과 Public/Private 분할표는 worker만 읽습니다. 웹 API 컨테이너와 참가자 컨테이너에는 연결하지 않습니다.
+
+## 예측 파일 검사
+
+UTF-8(BOM 허용) CSV, 컬럼은 순서대로 `id,label`. 빈 값, 추가 열, 중복 ID, 알 수 없는 ID, 누락된 ID, 허용하지 않은 label을 거부합니다. label은 문자열이며 `1.10`을 `1.1`로 바꾸면 안 됩니다. 행 순서는 자유입니다.
+
+참가자에게 보이는 오류 문장은 **개수만** 알려 주고 파일 안의 값을 그대로 보여 주지 않습니다. 추론 코드가 숨긴 평가 입력을 예측 파일에 적어 오류 메시지로 빼내는 것을 막기 위해서입니다. 컨테이너의 표준 출력·오류도 같은 이유로 관리자에게만 보입니다.
+
+## Public과 Private
+
+평가 데이터의 약 30%가 Public, 70%가 Private입니다. 참가자 응답에는 Public 점수만 있습니다. Private 점수는 관리자 화면과 최종 순위에서만 쓰입니다.
+
+- **Public 순위**: 팀별 최고 Public 점수. 자동으로 가장 높은 점수를 씁니다.
+- **동점**: 점수가 기록된 시각이 빠른 팀, 그다음 접수 ID가 작은 쪽. 표시는 5자리, 순위 계산은 전체 정밀도.
+- **최종 순위**: 관리자 설정 `final_selection`을 따릅니다. `best_public`(기본, 권장안)은 팀의 Public 최고 제출물이 받은 Private 점수, `best_private`는 팀의 Private 최고 점수입니다. **운영진 확정 전**이므로 참가자 화면에는 "추후 공지"로 표시합니다.
+
+## 제출 횟수
+
+팀 단위로 대회 전체 기간에 센 횟수입니다. 접수된 제출은 1회를 쓰고, 접수 단계에서 거절된 업로드는 쓰지 않습니다. 채점 실패 제출의 차감 여부는 관리자 설정 `count_failed`로 정하며 운영진 확정 전입니다. 서버 장애(`system_error`)는 항상 차감하지 않습니다. 관리자는 제출별로 횟수를 복구하거나 다시 채점할 수 있고, 그 조작은 기록에 남습니다.
+
+## 동결·종료
+
+- **Freeze**: 공개 순위만 멈춥니다. 제출과 채점, 팀의 자기 Public 점수 확인은 계속됩니다. 해제하면 최신 점수로 순위를 다시 만듭니다. 차단된 계정의 제출은 동결 중에도 순위에서 빠집니다.
+- **종료 직전 제출**: 종료 시각 전에 접수된 제출은 종료 후에도 대기열에서 채점됩니다.
+- **Finalize**: 대회가 닫혀 있고 **대기열이 비어 있을 때만** 가능합니다. 이후 제출, 계정 상태 변경, 다시 채점, 대회 재개를 거부합니다.
+
+## mock 평가기
+
+`EVALUATOR=mock`(개발 기본값)은 ZIP 해시로 **가짜 점수**를 만듭니다. 화면과 관리자 페이지에 mock임이 표시되고, 평가기가 다른 제출은 순위에 섞이지 않습니다. ZIP에 `mock.json`을 넣으면 `{"fail": "timeout"}`, `{"sleep": 20}`, `{"public": 0.7}`처럼 결과를 지정해 화면을 시험할 수 있습니다.
+
+## 점수 다시 계산
+
+정답 파일을 고친 경우 worker에서 저장된 예측으로 다시 계산합니다. 모델을 다시 실행하지 않습니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.evaluator.yml exec worker python -m app.worker rescore
+```

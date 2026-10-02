@@ -1,6 +1,23 @@
-# Validation record — 2026-10-01
+# Validation record
 
-The current release is documented under “Coordinate-only participant release” below. Earlier sections preserve intermediate and superseded validation records.
+The current code is documented under “Model ZIP submission” directly below (2026-10-02). The later sections are records of the earlier CSV-submission prototype and of the dataset, kept for history; dataset generation now lives in the data repository.
+
+## Model ZIP submission, queue worker and isolated scoring — 2026-10-02
+
+Verified on a Windows 11 development PC with Docker Desktop (8 CPUs, 16 GB), using FAKE demo data from `scripts/make_demo.py`. Not yet verified: the real dataset, the data team's inference contract, a Linux host, the club-room computer, real model sizes and timings.
+
+- Unit/API tests: 76 passed on the host and 76 passed inside the `api` container (`pytest.docker.ini`). Covers issued-account login, removed registration, ZIP intake rejections, team-wide limit shared by several accounts, queue worker, failure codes, stale-job recovery, requeue, attempt refund, freeze, ban, tie order, both final-ranking rules, dataset approval/verify/lock, account sheet sync, ZIP checks, container command flags.
+- Next.js production build and TypeScript check passed in the `web` image build.
+- `scripts/postgres_smoke.py` on real PostgreSQL in a disposable database: `0001 -> 0002` migration with prototype rows, issued accounts, two accounts of one team submitting at the same moment with limit 1 (exactly one `202`, one `429`), worker scoring, leaderboard, private-score protection, close/finalize, audit log, then downgrade to `0001` and upgrade again.
+- Through the gateway with the mock evaluator: login, `queued -> running -> succeeded`, mock failure, wrong extension `415`, non-ZIP `422`, leaderboard, quota, `/api/datasets/test` `404`.
+- Upload size: through the Next.js proxy a 15 MB ZIP failed (10 MB proxy body limit). Through the nginx gateway 15 MB and 300 MB were accepted (`202`, 300 MB in about 3 s locally) and 520 MB was refused with `413 zip_too_large`.
+- Real Docker evaluator (`docker-compose.evaluator.yml`, limits lowered to 20 s and 512 MB for the test): a valid submission scored with real Macro F1 against the fake labels; a crash gave `runtime_error` with the traceback visible to the organizer only; malformed output `output_invalid`; a symlink planted as the output file `output_missing`; 20 MB output `output_invalid`; memory hog `out_of_memory`; a 120 s sleep `timeout` after 23 s; restarting the worker mid-run re-queued the submission and finished it on attempt 2.
+- Isolation probe run as a submission: no network or DNS, PostgreSQL unreachable, no Docker socket, no labels file anywhere, no secret environment variables, `/submission`, `/input` and `/` read-only, running as uid 65534, only `/tmp` writable, `/input` contained only `test.csv`.
+- Mock scores did not appear on the leaderboard once the evaluator was `docker`.
+- API container checked: no `/srv/data/private`, no docker CLI. Worker in mock mode: uid 10001, no Docker socket.
+- Browser (desktop 1024 px and mobile 375 px): login dialog, case-insensitive ID, ZIP upload with confirmation, receipt ID, automatic status refresh to the score, remaining attempts; organizer overview, account issue with one-time password, submissions filter and log view, dataset approval view, audit log. No horizontal overflow at 375 px.
+
+## CSV prototype and dataset records — 2026-10-01
 
 - Official CATH v4.4 FASTA (6,552,513 bytes) and classifications (44,606,235 bytes) downloaded and SHA-256 recorded.
 - Actual dataset generated: 32,545 samples / 20 classes; train 26,048, test 6,497.

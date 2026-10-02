@@ -1,0 +1,198 @@
+# API·상태 계약
+
+웹사이트팀 네 사람과 데이터/평가 담당자가 **같은 버전**을 쓰기 위한 단일 문서입니다. 계약을 바꿀 때는 이 문서, `apps/api/app/routers/common.py`, `apps/web/app/types.ts`를 함께 고칩니다. 변경은 승현이 반영합니다.
+
+`(임시)` 표시는 운영진·데이터팀 확정 전의 개발용 값입니다. 코드에 박지 않고 환경변수나 관리자 설정으로 뒀습니다.
+
+## 공통
+
+- 모든 경로는 `/api`로 시작합니다. 로그인 세션은 `admin_session` 쿠키(HttpOnly, 12시간)입니다.
+- `POST`, `PATCH`에는 헤더 `X-Requested-With: ADMIN-Challenge`가 필요합니다.
+- 오류 응답은 `{"detail": "한국어 안내", "code": "기계용 코드"}`입니다. `code`는 제출 접수 오류에만 항상 있습니다.
+- 시각은 모두 UTC ISO 8601입니다.
+
+## 제출 상태
+
+```text
+            접수(202)                 worker가 가져감              채점 끝
+(업로드) ───────────▶ queued ───────────────────▶ running ───────────▶ succeeded
+                        ▲                            │
+                        │  worker가 죽으면 되돌림      └────────────▶ failed
+                        └────────────────────────────┘
+                        ▲
+                        └── 관리자가 failed 제출을 "다시 채점"
+```
+
+| 상태 | 뜻 | 참가자 화면 |
+| --- | --- | --- |
+| `queued` | 접수됨, 대기열에서 차례를 기다림 | 대기 중, 대기 순서 |
+| `running` | worker가 추론·채점 중 | 채점 중 |
+| `succeeded` | Public/Private 점수 저장 완료 | Public 점수 |
+| `failed` | 실패. `failure_code`와 `error_message`가 있음 | 실패 사유와 안내 |
+
+### 실패 코드 (`failure_code`)
+
+| 코드 | 원인 | 횟수 차감 |
+| --- | --- | --- |
+| `zip_invalid` | 압축 내용이 규격 위반(심층 검사) | 설정 `count_failed`에 따름 |
+| `runtime_error` | 추론 코드가 0이 아닌 코드로 종료 | 〃 |
+| `timeout` | 추론이 제한 시간을 넘김 | 〃 |
+| `out_of_memory` | 메모리 한도 초과로 종료 | 〃 |
+| `output_missing` | 예측 파일이 없음 | 〃 |
+| `output_invalid` | 예측 파일 형식·ID·라벨 오류, 출력 크기 초과 | 〃 |
+| `system_error` | 채점 서버 쪽 장애 | **항상 차감 없음** |
+
+`error_message`는 참가자에게 보여도 되는 문장만 담습니다. 컨테이너 출력(`log_tail`)은 **관리자 API에서만** 나갑니다. 추론 코드가 숨긴 평가 입력을 오류 메시지로 빼내는 것을 막기 위해서입니다.
+
+### 접수 단계 거절 (HTTP 오류, 기록·차감 없음)
+
+| HTTP | `code` | 상황 |
+| --- | --- | --- |
+| 401 | — | 로그인 필요, 또는 비밀번호 재설정으로 세션 만료 |
+| 403 | `closed` | 제출 기간이 아님 |
+| 413 | `zip_too_large` | 압축 ZIP이 상한 초과 |
+| 415 | `not_zip` | 파일 이름이 `.zip`이 아님 |
+| 422 | `zip_invalid` | ZIP이 아님, 손상, 필수 항목 누락, 경로 순회, 심볼릭 링크, 중복 경로, 항목 수·해제 크기 초과 |
+| 429 | `limit_reached` | 팀 제출 횟수 소진 |
+
+## 인증
+
+회원가입 API는 없습니다. 계정은 운영진만 만듭니다.
+
+| 메서드·경로 | 요청 | 응답 |
+| --- | --- | --- |
+| `POST /auth/login` | `{"username","password"}` | 사용자 |
+| `POST /auth/logout` | — | `{"ok":true}` |
+| `GET /auth/me` | — | 사용자 |
+
+```json
+{"id": 12, "username": "k7m2xq9rtd", "display_name": "Team 03", "team_id": 5, "team_name": "Team 03", "role": "USER"}
+```
+
+아이디는 대소문자를 구분하지 않습니다. 비밀번호를 재설정하면 그 계정의 기존 로그인은 모두 풀립니다.
+
+## 공개 조회
+
+`GET /competition`
+
+```json
+{
+  "title": "ADMIN Protein Structure Classification Challenge",
+  "settings": {"is_open": true, "start_time": "2026-10-24T00:00:00Z", "end_time": "2026-10-24T09:00:00Z",
+               "team_submission_limit": 10, "frozen": false, "finalized": false},
+  "submission_open": true,
+  "dataset_available": true,
+  "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21568, "bytes": 0}}},
+  "limits": {"zip_bytes": 524288000, "inference_seconds": 600, "team_submissions": 10,
+             "required_entries": ["inference.py", "requirements.txt", "model/"]},
+  "evaluator": "mock",
+  "teams": 10,
+  "submissions": 37
+}
+```
+
+- `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
+- 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
+- `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
+- 미확정 정책(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다.
+
+`GET /leaderboard?board=public|final`
+
+```json
+{"board": "public", "frozen": false, "evaluator": "mock",
+ "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
+```
+
+`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름), `class-distribution`, `length-distribution`입니다. 평가 입력에 해당하는 경로는 없습니다(404).
+
+## 제출 (참가자)
+
+`POST /submissions`: 본문은 **ZIP 원본 바이트**, 헤더 `X-Filename: <URL 인코딩한 파일 이름>`, `Content-Type: application/zip`. 서버는 저장·기본 검사만 하고 즉시 `202`를 돌려줍니다. 여기서는 모델을 실행하지 않습니다.
+
+```json
+{"id": 41, "filename": "code.zip", "status": "queued", "failure_code": null, "error_message": null,
+ "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "evaluator": null,
+ "queue_position": 3, "created_at": "…", "started_at": null, "finished_at": null,
+ "used": 4, "limit": 10, "remaining": 6}
+```
+
+`GET /submissions/me`: 로그인한 계정의 **팀 전체** 제출과 남은 횟수.
+
+```json
+{"entries": [{"id": 41, "…": "위와 같음", "submitted_by": "Team 03"}], "used": 4, "limit": 10, "remaining": 6}
+```
+
+`GET /submissions/{id}`: 자기 팀 제출 하나(상태 확인용). Private 점수는 참가자 응답 어디에도 없습니다.
+
+### 횟수 규칙
+
+- 팀 단위, 대회 전체. 날짜가 바뀌어도 복구되지 않습니다.
+- **접수된 시점에 1회 사용**합니다(`counted: true`). 접수 단계에서 거절된 업로드는 사용하지 않습니다.
+- 채점 실패 시: 관리자 설정 `count_failed`가 꺼져 있으면 그 제출의 `counted`가 `false`가 됩니다 `(임시: 기본은 차감)`. `system_error`는 항상 `false`입니다.
+- 같은 팀의 여러 계정이 동시에 올려도 팀 행을 잠그고 세므로 상한을 넘지 않습니다.
+
+## 관리자
+
+모두 `ADMIN` 권한이 필요합니다. 조작은 `audit` 기록에 담당자·시각·대상·결과로 남습니다.
+
+| 메서드·경로 | 용도 |
+| --- | --- |
+| `GET /admin/overview` | 설정 전체, 대기열 건수, 실패 코드별 건수, worker 상태 |
+| `PATCH /admin/competition` | `is_open`, `start_time`, `end_time`, `team_submission_limit`, `count_failed`, `final_selection`, `frozen` |
+| `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
+| `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경 |
+| `POST /admin/users` `{"team_id","username"?}` | 계정 발급. `username`을 빼면 랜덤 10자리. 응답의 `temporary_password`는 **이때만** 나옴 |
+| `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급 |
+| `PATCH /admin/users/{id}` `{"banned"}` | 차단·해제 |
+| `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함 |
+| `GET /admin/submissions/{id}` | 상세 + `log_tail` + ZIP 보관 여부 |
+| `POST /admin/submissions/{id}/requeue` | 실패한 제출을 다시 채점 |
+| `PATCH /admin/submissions/{id}` `{"counted"}` | 제출 횟수 복구·차감 |
+| `POST /admin/leaderboard/recalculate` | 저장된 점수로 Public 순위 다시 만들기 |
+| `POST /admin/leaderboard/finalize` | 최종 순위 공개. 대회가 닫혀 있고 대기열이 비어야 함 |
+| `GET /admin/dataset` · `POST /admin/dataset/approve` · `/verify` · `/lock` `{"locked"}` | 데이터 버전 확인·승인·변경 검사·잠금 |
+| `GET /admin/audit?limit=` | 조작 기록 |
+
+## 순위 규칙
+
+- Public 순위: 팀별 최고 Public 점수. 채점 성공 직후 갱신(동결 중이면 해제 때 갱신).
+- 동점: 점수가 기록된 시각이 빠른 쪽, 그다음 접수 ID가 작은 쪽.
+- 최종 순위 `(임시, Q7)`: 설정 `final_selection`. `best_public`(기본)은 Public 최고 제출물의 Private 점수, `best_private`는 Private 최고 제출물.
+- 다른 평가기로 채점된 제출은 순위에 넣지 않습니다. mock 점수가 실제 순위에 섞이지 않습니다.
+
+## 제출 ZIP 규격 `(임시, Q2·Q3)`
+
+```text
+code.zip
+├── inference.py        필수
+├── requirements.txt    필수. 사용 패키지 명세일 뿐, 채점 중 설치하지 않음
+├── model/              필수. 학습된 가중치와 전처리 객체
+└── train.py            선택. 채점에는 쓰지 않음
+```
+
+- 필수 항목은 **ZIP 최상위**에 있어야 합니다. 목록은 환경변수 `ZIP_REQUIRED`.
+- 압축 ZIP 최대 500 MB(`MAX_ZIP_BYTES`, 확정). 해제 후 합계 2 GiB, 항목 2,000개(`MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, 임시).
+- 거절: 절대 경로, `..`, 심볼릭 링크·특수 파일, 같은 경로 중복, 암호화.
+
+## 추론 실행 계약 `(임시, 데이터/평가팀과 확정 필요)`
+
+채점 컨테이너 안에서 다음과 같이 실행합니다.
+
+```text
+작업 디렉터리  /submission        (ZIP을 푼 내용, 읽기 전용)
+명령          python inference.py --input /input --output /output/predictions.csv
+입력          /input              (숨긴 평가 입력, 읽기 전용)
+출력          /output/predictions.csv   UTF-8, 헤더 id,label, 평가 ID마다 정확히 한 줄
+```
+
+- 네트워크 없음, 읽기 전용 루트, 일반 사용자(65534), CPU·메모리·프로세스 수 제한, `/tmp`만 쓰기 가능.
+- 정답, Public/Private 분할표, DB 정보, Docker 소켓은 컨테이너에 주지 않습니다. 정답 비교는 컨테이너 밖 worker가 합니다.
+- 명령은 환경변수 `EVAL_COMMAND`, 이미지는 `EVAL_IMAGE`, 자원은 `EVAL_CPUS`·`EVAL_MEMORY`·`EVAL_PIDS`로 바꿉니다.
+
+### 데이터/평가팀에 확인할 것
+
+1. `/input` 아래 파일 이름과 스키마(서열 CSV, 특징 CSV, 구조 NPZ의 배치).
+2. 진입점 형태: 위의 `--input/--output` 인자 방식으로 고정해도 되는가.
+3. 고정 채점 이미지에 넣을 패키지와 버전(`apps/evaluator/requirements.txt` 초안).
+4. `metadata.json`에 `version`과 `validation`(검증 통과 여부)을 넣어 줄 수 있는가. 관리자 데이터 화면이 이 값을 읽습니다.
+5. 작은 공개 예제 입출력 파일의 이름. 지금은 `example_io.zip`으로 가정했습니다.
