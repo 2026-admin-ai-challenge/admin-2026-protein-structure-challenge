@@ -1,18 +1,50 @@
-"""Interactive, server-only administrator creation; no default credentials."""
+"""Interactive, server-only administrator creation or password reset; no default credentials.
+
+    docker compose exec api python -m app.create_admin
+"""
 import getpass
+
 from sqlalchemy import select
+
+from .audit import record
 from .db import SessionLocal
-from .models import User,Team
+from .models import Team, User
+from .schemas import clean_username
 from .security import hasher
 
+TEAM_NAME = "ADMIN organizers"
+
+
 def main():
-    email=input("Admin email: ").strip().lower()
-    password=getpass.getpass("Password (minimum 12 characters): ")
-    if len(password)<12: raise SystemExit("Password too short")
-    if getpass.getpass("Confirm password: ")!=password: raise SystemExit("Passwords differ")
+    try:
+        username = clean_username(input("Admin ID: "))
+    except ValueError as error:
+        raise SystemExit(str(error))
     with SessionLocal() as db:
-        if db.scalar(select(User).where(User.email==email)): raise SystemExit("Email already registered; use a new organizer email")
-        team=Team(name="ADMIN organizers");db.add(team);db.flush()
-        db.add(User(email=email,password_hash=hasher.hash(password),display_name="ADMIN",team_id=team.id,role="ADMIN"));db.commit()
-    print("Administrator created")
-if __name__=="__main__": main()
+        existing = db.scalar(select(User).where(User.username == username))
+        if existing and existing.role != "ADMIN":
+            raise SystemExit("이미 참가자 계정이 쓰는 아이디입니다. 다른 아이디를 사용하세요.")
+        if existing and input("이미 있는 관리자입니다. 비밀번호를 재설정할까요? [y/N] ").strip().lower() != "y":
+            raise SystemExit("취소했습니다.")
+        password = getpass.getpass("Password (minimum 12 characters): ")
+        if len(password) < 12:
+            raise SystemExit("Password too short")
+        if getpass.getpass("Confirm password: ") != password:
+            raise SystemExit("Passwords differ")
+        if existing:
+            existing.password_hash = hasher.hash(password)
+            record(db, "cli", "admin.reset_password", f"user:{username}")
+        else:
+            team = db.scalar(select(Team).where(Team.name == TEAM_NAME))
+            if not team:
+                team = Team(name=TEAM_NAME)
+                db.add(team)
+                db.flush()
+            db.add(User(username=username, password_hash=hasher.hash(password), display_name="ADMIN", team_id=team.id, role="ADMIN"))
+            record(db, "cli", "admin.create", f"user:{username}")
+        db.commit()
+    print("Administrator password reset" if existing else "Administrator created")
+
+
+if __name__ == "__main__":
+    main()

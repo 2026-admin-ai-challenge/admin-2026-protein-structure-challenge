@@ -1,0 +1,246 @@
+import json
+from datetime import timedelta
+
+import pandas as pd
+import pytest
+from sqlalchemy import select
+
+from app.evaluators.base import Evaluator, Outcome
+from app.evaluators.mock import MockEvaluator
+from app.leaderboard import rebuild
+from app.models import LeaderboardEntry, Settings, Submission, Team, User, Worker, now
+from app.worker import process_one, recover_stale
+from conftest import add_account, login, make_zip, upload
+from test_api import HIDDEN_FIELDS, PARTICIPANT_PATHS
+
+MOCK = MockEvaluator()
+
+
+def mock_zip(**controls):
+    return make_zip(extra={"mock.json": json.dumps(controls)})
+
+
+def scored(db, user, public, private, seconds=0, evaluator="mock"):
+    stamp = now() + timedelta(seconds=seconds)
+    row = Submission(user_id=user["id"], team_id=user["team_id"], filename="code.zip", status="succeeded",
+                     public_score=public, private_score=private, evaluator=evaluator, created_at=stamp, finished_at=stamp)
+    db.add(row)
+    db.flush()
+    return row
+
+
+def test_worker_scores_queue_in_order_and_updates_leaderboard(client, db, participant):
+    first = upload(client, mock_zip(public=0.5, private=0.9)).json()
+    second = upload(client, mock_zip(public=0.7, private=0.1)).json()
+    assert (first["queue_position"], second["queue_position"]) == (1, 2)
+    assert client.get("/api/leaderboard").json()["entries"] == []
+
+    done = process_one(db, MOCK, "worker-a")
+    assert done.id == first["id"] and done.status == "succeeded" and done.evaluator == "mock"
+    assert done.started_at and done.finished_at and done.attempts == 1
+    history = {entry["id"]: entry for entry in client.get("/api/submissions/me").json()["entries"]}
+    assert history[first["id"]]["public_score"] == 0.5 and history[first["id"]]["queue_position"] is None
+    assert history[second["id"]]["status"] == "queued" and history[second["id"]]["queue_position"] == 1
+
+    assert process_one(db, MOCK, "worker-a").id == second["id"]
+    assert process_one(db, MOCK, "worker-a") is None
+    entry = client.get("/api/leaderboard").json()["entries"][0]
+    assert entry["team"] == participant["team_name"] and entry["score"] == 0.7 and entry["submissions"] == 2
+    assert db.scalar(select(LeaderboardEntry.submission_id).where(LeaderboardEntry.board == "public")) == second["id"]
+    for path in PARTICIPANT_PATHS + [f"/api/submissions/{first['id']}"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        for field in HIDDEN_FIELDS:
+            assert field not in response.text
+    worker = db.get(Worker, "worker-a")
+    assert worker.ready and worker.evaluator == "mock"
+
+
+@pytest.mark.parametrize("code", ["timeout", "runtime_error", "out_of_memory", "output_missing", "output_invalid"])
+def test_failures_are_recorded_and_count_by_default(client, db, participant, code):
+    submitted = upload(client, mock_zip(fail=code)).json()
+    row = process_one(db, MOCK, "worker-a")
+    assert (row.status, row.failure_code, row.counted) == ("failed", code, True)
+    assert row.public_score is None and row.finished_at
+    seen = client.get(f"/api/submissions/{submitted['id']}").json()
+    assert seen["failure_code"] == code and seen["error_message"] and "mock" not in seen["error_message"]
+    assert client.get("/api/submissions/me").json()["used"] == 1
+    assert client.get("/api/leaderboard").json()["entries"] == []
+
+
+def test_failed_attempts_are_returned_when_policy_says_so(client, db, participant):
+    db.get(Settings, 1).count_failed = False
+    db.commit()
+    upload(client, mock_zip(fail="runtime_error"))
+    assert client.get("/api/submissions/me").json()["used"] == 1  # held while it waits
+    assert process_one(db, MOCK, "worker-a").counted is False
+    assert client.get("/api/submissions/me").json()["used"] == 0
+
+
+def test_server_faults_never_use_an_attempt_and_can_be_requeued(client, db, participant, organizer):
+    class Broken(Evaluator):
+        name = "mock"
+
+        def run(self, submission, zip_path, tick):
+            raise RuntimeError("disk on fire")
+
+    submitted = upload(client).json()
+    row = process_one(db, Broken(), "worker-a")
+    assert (row.status, row.failure_code, row.counted) == ("failed", "system_error", False)
+    assert "disk on fire" in row.log_tail and "disk on fire" not in row.error_message
+    assert client.get("/api/submissions/me").json()["used"] == 0
+    assert client.post(f"/api/admin/submissions/{submitted['id']}/requeue").status_code == 403
+
+    participant_session = client.cookies.get("admin_session")
+    client.cookies.set("admin_session", organizer)
+    detail = client.get(f"/api/admin/submissions/{submitted['id']}").json()
+    assert "disk on fire" in detail["log_tail"] and detail["file_present"] is True
+    overview = client.get("/api/admin/overview").json()
+    assert overview["queue"]["failed"] == 1 and overview["failures"] == {"system_error": 1} and overview["evaluator"] == "mock"
+    assert [s["id"] for s in client.get("/api/admin/submissions?status=failed&failure_code=system_error").json()] == [submitted["id"]]
+    assert client.get("/api/admin/submissions?status=succeeded").json() == []
+    assert len(client.get("/api/admin/submissions?q=Protein").json()) == 1
+    assert client.post(f"/api/admin/submissions/{submitted['id']}/requeue").status_code == 200
+    assert client.post(f"/api/admin/submissions/{submitted['id']}/requeue").status_code == 409
+    assert process_one(db, MOCK, "worker-a").status == "succeeded"
+
+    client.cookies.set("admin_session", participant_session)
+    assert client.get("/api/submissions/me").json()["used"] == 1
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/submissions/{submitted['id']}", json={"counted": False}).json()["used"] == 0
+    actions = {entry["action"] for entry in client.get("/api/admin/audit").json()}
+    assert {"submission.requeue", "submission.counted"} <= actions
+
+
+def test_restart_recovers_running_submissions(client, db, participant):
+    submitted = upload(client).json()
+    row = db.get(Submission, submitted["id"])
+    row.status, row.worker_id, row.attempts = "running", "dead-worker", 1
+    row.started_at = row.heartbeat_at = now() - timedelta(minutes=30)
+    db.commit()
+    assert process_one(db, MOCK, "worker-b") is None  # still owned by the dead worker
+    assert recover_stale(db) == 1 and db.get(Submission, submitted["id"]).status == "queued"
+    done = process_one(db, MOCK, "worker-b")
+    assert done.status == "succeeded" and done.attempts == 2 and done.worker_id == "worker-b"
+
+    # A submission that keeps killing workers is given up on, without using an attempt.
+    again = upload(client).json()
+    row = db.get(Submission, again["id"])
+    row.status, row.attempts, row.heartbeat_at = "running", 3, now() - timedelta(minutes=30)
+    db.commit()
+    recover_stale(db)
+    row = db.get(Submission, again["id"])
+    assert (row.status, row.failure_code, row.counted) == ("failed", "system_error", False)
+
+
+def test_result_of_a_worker_that_lost_its_job_is_dropped(client, db, participant):
+    submitted = upload(client).json()
+
+    class Slow(Evaluator):
+        name = "mock"
+
+        def run(self, submission, zip_path, tick):
+            # While this worker was busy, the job was taken back and given to another one.
+            db.get(Submission, submitted["id"]).worker_id = "worker-b"
+            db.commit()
+            return Outcome(ok=True, scores={"public": 0.99, "private": 0.99})
+
+    assert process_one(db, Slow(), "worker-a") is None
+    row = db.get(Submission, submitted["id"])
+    assert row.status == "running" and row.public_score is None
+
+
+def test_real_predictions_are_scored_against_hidden_labels(client, db, participant):
+    labels = pd.DataFrame({"id": ["T1", "T2", "T3", "T4"], "label": ["a", "b", "a", "b"],
+                           "partition": ["public", "public", "private", "private"]})
+
+    def answers():
+        return labels, ["a", "b"]
+
+    class Fixed(Evaluator):
+        name = "mock"
+
+        def __init__(self, csv):
+            self.csv = csv
+
+        def run(self, submission, zip_path, tick):
+            tick()
+            return Outcome(ok=True, predictions=self.csv, log="container output")
+
+    upload(client)
+    good = process_one(db, Fixed(b"id,label\nT4,a\nT1,a\nT2,b\nT3,b\n"), "worker-a", answers)
+    assert (good.status, good.public_score, good.private_score) == ("succeeded", 1.0, 0.0)
+    assert json.loads(good.predictions) == ["a", "b", "b", "a"]
+
+    upload(client)
+    bad = process_one(db, Fixed(b"id,label\nT1,a\nT2,SECRET-SEQUENCE\nT3,b\n"), "worker-a", answers)
+    assert (bad.status, bad.failure_code) == ("failed", "output_invalid")
+    # The message reports counts only; echoing values could leak hidden evaluation input.
+    assert "SECRET" not in bad.error_message and "1종" in bad.error_message
+
+
+def test_frozen_board_keeps_scoring_but_hides_new_ranks(client, db, participant, organizer):
+    db.get(Settings, 1).frozen = True
+    db.commit()
+    upload(client, mock_zip(public=0.6, private=0.6))
+    assert process_one(db, MOCK, "worker-a").public_score == 0.6
+    assert client.get("/api/leaderboard").json()["entries"] == []
+    client.cookies.set("admin_session", organizer)
+    assert client.post("/api/admin/leaderboard/recalculate").status_code == 409
+    assert client.patch("/api/admin/competition", json={"frozen": False}).status_code == 200
+    assert client.get("/api/leaderboard").json()["entries"][0]["score"] == 0.6
+    assert client.post("/api/admin/leaderboard/recalculate").status_code == 200
+
+
+def test_ban_removes_team_from_board(client, db, participant, organizer):
+    upload(client)
+    process_one(db, MOCK, "worker-a")
+    session = client.cookies.get("admin_session")
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/users/{participant['id']}", json={"banned": True}).status_code == 200
+    assert client.get("/api/leaderboard").json()["entries"] == []
+    client.cookies.set("admin_session", session)
+    assert client.get("/api/auth/me").status_code == 403
+
+
+def test_ties_go_to_the_earlier_score_and_teams_appear_once(client, db, participant):
+    mate = add_account(db, participant["team_name"], "teammate")
+    other = add_account(db, "Other team", "otherteam")
+    scored(db, participant, 0.8, 0.5, seconds=5)
+    scored(db, other, 0.8, 0.5, seconds=1)
+    scored(db, mate, 0.7, 0.5, seconds=2)
+    scored(db, other, 0.95, 0.5, seconds=3, evaluator="docker")  # scored by another evaluator: ignored
+    rebuild(db)
+    db.commit()
+    entries = client.get("/api/leaderboard").json()["entries"]
+    assert [(e["rank"], e["team"], e["score"], e["submissions"]) for e in entries] == [
+        (1, "Other team", 0.8, 1), (2, participant["team_name"], 0.8, 2)]
+
+
+@pytest.mark.parametrize("selection,expected", [
+    ("best_public", [("Other team", 0.6), ("Protein Learners", 0.3)]),
+    ("best_private", [("Protein Learners", 0.9), ("Other team", 0.6)]),
+])
+def test_final_board_follows_the_configured_rule(client, db, participant, organizer, selection, expected):
+    other = add_account(db, "Other team", "otherteam")
+    scored(db, participant, 0.8, 0.3)   # best Public of the team
+    scored(db, participant, 0.5, 0.9)   # best Private of the team
+    scored(db, other, 0.7, 0.6)
+    db.commit()
+    pending = upload(client).json()
+    client.cookies.set("admin_session", organizer)
+    assert client.get("/api/leaderboard?board=final").status_code == 403
+    assert client.patch("/api/admin/competition", json={"final_selection": selection}).status_code == 200
+    assert client.post("/api/admin/leaderboard/finalize").status_code == 409  # still open
+    assert client.patch("/api/admin/competition", json={"is_open": False}).status_code == 200
+    blocked = client.post("/api/admin/leaderboard/finalize")
+    assert blocked.status_code == 409 and "1건" in blocked.json()["detail"]  # a submission is still queued
+    assert process_one(db, MockEvaluator(), "worker-a").id == pending["id"]
+    db.get(Submission, pending["id"]).public_score = 0.1
+    db.get(Submission, pending["id"]).private_score = 0.1
+    db.commit()
+    assert client.post("/api/admin/leaderboard/finalize").status_code == 200
+    final = client.get("/api/leaderboard?board=final").json()["entries"]
+    assert [(e["team"], e["score"]) for e in final] == expected
+    assert client.patch("/api/admin/competition", json={"is_open": True}).status_code == 409
+    assert client.patch(f"/api/admin/users/{participant['id']}", json={"banned": True}).status_code == 409
