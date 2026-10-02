@@ -61,6 +61,71 @@ Team 01,k7m2xq9rtd,임시비밀번호,Team 01
 - 시트에 없는 참가자 계정까지 막으려면 `--exclusive`를 붙입니다.
 - DB에는 비밀번호 해시만 저장됩니다. 관리자 화면에서도 팀·계정 발급, 비밀번호 재설정, 차단을 할 수 있습니다.
 
+## 관리자 사용법
+
+관리자 화면은 관리자 계정으로 로그인하면 보이는 **Admin** 탭(또는 `/admin` 주소)입니다. 장애 대응과 종료 절차까지 포함한 자세한 내용은 [운영진 가이드](docs/operations.md)에 있습니다.
+
+### 1. 관리자 계정 만들기 (서버에서 한 번)
+
+```bash
+docker compose exec api python -m app.create_admin
+```
+
+`Admin ID`에는 **새로 정할 아이디**를 입력합니다(영문 소문자·숫자 3자 이상). 비밀번호는 12자 이상이고 입력할 때 화면에 보이지 않습니다. 같은 아이디로 다시 실행하면 비밀번호를 재설정합니다.
+
+### 2. 대회 열기
+
+1. **Admin → 현황·설정**에서 시작 시간과 종료 시간을 넣고 **Save settings**를 누릅니다.
+2. **Open competition**을 누릅니다. 화면 위쪽이 "Competition open"으로 바뀌면 제출을 받습니다.
+3. 학습 데이터 다운로드까지 열려면 **데이터** 메뉴에서 **현재 버전 승인**을 누릅니다. 제출만 시험할 때는 필요 없습니다.
+
+제출은 "대회가 열려 있고, 현재 시각이 시작~종료 사이"일 때만 받습니다.
+
+### 3. 메뉴별로 할 수 있는 일
+
+| 메뉴 | 할 수 있는 일 |
+| --- | --- |
+| 현황·설정 | 대기·채점 중·실패 건수와 채점 작업자 상태 확인, 일정·팀당 제출 횟수 설정, 대회 열기/닫기, 순위 동결, 최종 순위 공개 |
+| 팀·계정 | 팀 만들기·이름 변경, 계정 발급, 비밀번호 재설정, 차단·해제, 팀별 제출 횟수와 ZIP 용량 확인 |
+| 제출·대기열 | 전체 제출 조회(상태·실패 사유 필터, 검색), 실행 로그, 다시 채점, 횟수 복구, ZIP 받기, 파일 삭제, 파일 정합성 검사 |
+| 데이터 | 데이터 버전과 파일 해시 확인, 공개 승인, 변경 여부 검사, 버전 잠금 |
+| 조작 기록 | 누가 언제 무엇을 했는지 확인 |
+
+### 4. 자주 하는 일
+
+- **계정 발급**: 팀·계정에서 팀을 만들고 **랜덤 아이디로 발급**을 누릅니다. 임시 비밀번호는 **그때 한 번만** 표시되니 닫기 전에 전달합니다.
+- **비밀번호를 잊은 팀**: **비밀번호 재설정**을 누르고 새 임시 비밀번호를 전달합니다. 기존 로그인은 즉시 풀립니다.
+- **실패 문의**: 제출·대기열에서 접수 ID로 검색하고 **로그**를 봅니다. 로그에는 평가 입력이 섞일 수 있으니 참가자에게 그대로 주지 않습니다.
+- **서버 탓으로 실패한 제출**: 원인을 고친 뒤 **다시 채점**을 누릅니다. 서버 오류(`system_error`)는 제출 횟수를 차감하지 않습니다.
+- **제출 횟수 돌려주기**: 해당 제출의 **횟수 복구**를 누릅니다.
+- **제출 ZIP 확인**: **ZIP 받기**로 내려받습니다(재현 심사용, 조작 기록에 남음).
+- **디스크 정리**: **파일 삭제**를 누르고 사유를 적습니다. 점수와 기록은 남고 파일만 지워집니다. 순위에 반영된 제출과 채점 중인 제출은 삭제할 수 없습니다.
+
+### 5. 대회 종료
+
+1. **Close competition**으로 닫습니다. 종료 시각 전에 접수된 제출은 계속 채점됩니다.
+2. 대기 중·채점 중이 0이 될 때까지 기다립니다.
+3. **Publish final leaderboard**를 누르면 최종(Private) 순위가 공개됩니다.
+
+### 주의할 점
+
+- **최종 순위 공개는 되돌릴 수 없습니다.** 이후에는 대회 재개, 계정 차단, 다시 채점이 막힙니다.
+- **파일 삭제도 되돌릴 수 없습니다.** 삭제한 제출은 다시 채점할 수 없습니다.
+- 화면에서 재설정한 비밀번호는 계정 시트(`accounts/participants.csv`)에 반영되지 않습니다. 이후 시트를 다시 불러오면 시트의 비밀번호로 돌아가므로 한 가지 방법만 쓰세요.
+- 화면에 "mock 채점" 표시가 있으면 점수가 가짜입니다. 실제 대회는 아래의 Docker 격리 평가기로 실행합니다.
+- `docker compose down -v`는 계정, 제출 기록, 점수, 제출 ZIP을 **전부 삭제**합니다. 서비스를 내릴 때는 `-v` 없이 `down`이나 `stop`만 씁니다.
+- ngrok 등 공개 주소로 띄운 동안에는 그 주소에서만 로그인됩니다. `localhost:3000`에서는 로그인이 거절됩니다.
+
+### 서버에서 쓰는 명령
+
+```bash
+docker compose ps                                        # 서비스 상태
+docker compose logs --tail 100 worker                    # 채점 로그
+docker compose restart worker                            # 채점 작업자 재시작 (대기열은 유지됨)
+docker compose exec api python -m app.check_files        # 저장된 ZIP과 DB 기록 비교
+cmd /c "docker compose exec -T postgres pg_dump -U admin challenge > backup.sql"   # DB 백업 (Windows)
+```
+
 ## 실제 채점 (Docker 격리 평가기)
 
 ```bash
@@ -76,7 +141,7 @@ worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨�
 - `apps/web/app/`: 화면. `components/`(참가자 패널), `components/admin/`(관리자 섹션), `lib/api.ts`(API 호출)
 - `apps/api/app/routers/`: `auth`, `public`, `submissions`, `admin`
 - `apps/api/app/worker.py`, `evaluators/`: 채점 작업자와 평가기(mock, docker)
-- `apps/api/app/zipcheck.py`, `storage.py`: ZIP 검사와 비공개 저장
+- `apps/api/app/zipcheck.py`, `storage.py`, `files.py`: ZIP 검사, 비공개 저장, 파일 기록(`submission_files`) 관리
 - `apps/api/app/accounts.py`: 계정 발급과 시트 동기화
 - `apps/api/migrations/`: DB 스키마
 - `apps/evaluator/`: 고정 채점 이미지 초안
@@ -88,7 +153,7 @@ worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨�
 - [API·상태 계약](docs/api-contract.md): 네 사람이 같이 쓰는 응답 예시, 상태, 실패 코드, ZIP·추론 규격
 - [참가자 안내](docs/competition.md) · [평가 방식](docs/evaluation.md)
 - [배포·운영](docs/deployment.md) · [운영진 가이드](docs/operations.md) · [임시 HTTPS 공유](docs/temporary-preview.md)
-- [검증 기록](docs/validation.md)
+- [수동 테스트 체크리스트](docs/manual-test-checklist.md) · [검증 기록](docs/validation.md)
 
 ## 테스트
 
