@@ -1,3 +1,4 @@
+// Mirrors docs/api-contract.md. Change both together.
 export type Entry = {
   rank: number;
   team: string;
@@ -7,48 +8,149 @@ export type Entry = {
 };
 export type User = {
   id: number;
+  username: string;
   display_name: string;
+  team_id: number;
   team_name: string;
-  email: string;
   role: string;
 };
+export type SubmissionStatus = "queued" | "running" | "succeeded" | "failed";
+export type Evaluator = "mock" | "docker";
 export type Submission = {
   id: number;
   filename: string;
+  status: SubmissionStatus;
+  failure_code: string | null;
+  error_message: string | null;
   public_score: number | null;
-  private_score?: number;
-  status: string;
-  error_message?: string;
+  counted: boolean;
+  size_bytes: number | null;
+  sha256: string | null;
+  evaluator: string | null;
+  queue_position: number | null;
   created_at: string;
-  team?: string;
-  user?: string;
-  previous_best?: number | null;
-  remaining?: number;
+  started_at: string | null;
+  finished_at: string | null;
+  submitted_by?: string | null;
+};
+export type Quota = { used: number; limit: number; remaining: number };
+export type SubmissionHistory = Quota & { entries: Submission[] };
+export type AdminSubmission = Submission & {
+  private_score: number | null;
+  team_id: number;
+  team: string;
+  user: string;
+  attempts: number;
+  worker_id: string | null;
+  log_tail?: string | null;
+  file_present?: boolean;
 };
 export type Settings = {
   is_open: boolean;
   start_time: string | null;
   end_time: string | null;
-  daily_limit: number;
+  team_submission_limit: number;
   frozen: boolean;
   finalized: boolean;
 };
+export type AdminSettings = Settings & {
+  count_failed: boolean;
+  final_selection: "best_public" | "best_private";
+};
+export type Limits = {
+  zip_bytes: number;
+  inference_seconds: number;
+  team_submissions: number;
+  required_entries: string[];
+};
 export type Meta = {
-  stats: {
+  version?: string;
+  stats?: {
     total: number;
     classes: number;
     train: number;
     test: number;
-    sequence_length: { mean: number; median: number; min: number; max: number };
-    samples_per_class: Record<string, number>;
+    sequence_length?: { mean: number; median: number; min: number; max: number };
+    samples_per_class?: Record<string, number>;
   };
   files: Record<string, { rows?: number; columns?: string[]; bytes: number }>;
   labels: string[];
 };
 export type Competition = {
-  dataset_available: boolean;
+  title: string;
   settings: Settings;
+  submission_open: boolean;
+  dataset_available: boolean;
   dataset: Meta | null;
-  participants: number;
+  limits: Limits;
+  evaluator: Evaluator;
+  teams: number;
   submissions: number;
+};
+export type Account = {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+  banned: boolean;
+  created_at: string;
+};
+export type IssuedAccount = Account & { temporary_password: string };
+export type AdminTeam = {
+  id: number;
+  name: string;
+  created_at: string;
+  users: Account[];
+  used: number;
+  limit: number;
+  submissions: number;
+  best_public: number | null;
+};
+export type WorkerInfo = {
+  id: string;
+  evaluator: string;
+  ready: boolean;
+  detail: string | null;
+  submission_id: number | null;
+  last_seen: string;
+  alive: boolean;
+};
+export type Overview = {
+  settings: AdminSettings;
+  limits: Limits;
+  evaluator: Evaluator;
+  queue: Record<SubmissionStatus, number>;
+  failures: Record<string, number>;
+  oldest_queued_at: string | null;
+  workers: WorkerInfo[];
+};
+export type DatasetFile = {
+  kind: string;
+  name: string;
+  present: boolean;
+  rows: number | null;
+  bytes?: number;
+  approved_sha256: string | null;
+};
+export type DatasetReport = {
+  metadata_present: boolean;
+  version: string | null;
+  validation: { passed?: boolean; [key: string]: unknown } | null;
+  stats: Meta["stats"] | null;
+  files: DatasetFile[];
+  approved: {
+    version: string | null;
+    at: string | null;
+    by: string | null;
+    locked: boolean;
+  };
+};
+export type AuditEntry = {
+  id: number;
+  created_at: string;
+  actor: string;
+  action: string;
+  target: string;
+  detail: string | null;
+  ok: boolean;
 };
