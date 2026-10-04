@@ -12,6 +12,15 @@
   --green: #438b73;
   --card: #fff;
   --shadow: 0 18px 70px #28233714;
+  --team-web: #4f63c8;
+  --team-web-soft: #f1f3fc;
+  --team-web-tint: #e1e6f8;
+  --team-data: #3b8569;
+  --team-data-soft: #eff7f3;
+  --team-data-tint: #dbeee5;
+  --lead-from: #6452bc;
+  --lead-to: #45378f;
+  --tree-line: #cdc6e4;
 }
 * {
   box-sizing: border-box;
@@ -1497,6 +1506,15 @@ input {
   --lav: #30283f;
   --hero: #24202e;
   --card: #201d28;
+  --team-web: #9fb0f2;
+  --team-web-soft: #1e2130;
+  --team-web-tint: #2b3150;
+  --team-data: #8cc9b0;
+  --team-data-soft: #1b2724;
+  --team-data-tint: #26403a;
+  --lead-from: #5b49b3;
+  --lead-to: #3a2f7c;
+  --tree-line: #4a4360;
   color-scheme: dark;
 }
 [data-theme="dark"] .brand img,
@@ -1987,7 +2005,7 @@ input {
 }
 .footer-project {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1fr 1.2fr;
   gap: 60px;
   padding-bottom: 42px;
 }
@@ -2072,14 +2090,143 @@ input {
   display: grid;
   gap: 2px;
   flex: 1;
+  min-width: 0;
 }
 .contributor-info strong {
   color: var(--ink);
   font-size: 16px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .contributor-info > span {
   font-size: 14px;
+}
+
+/* Project lead sits above the two team columns. */
+.footer-contributor.footer-lead {
+  gap: 16px;
+  padding: 22px 24px;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--lead-from), var(--lead-to));
+  color: #ffffffc7;
+  box-shadow: 0 14px 36px #45378f2e;
+  transition: transform 160ms, box-shadow 160ms;
+}
+.footer-contributor.footer-lead:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px #45378f42;
+}
+.footer-lead .contributor-avatar {
+  width: 58px;
+  height: 58px;
+  background: #ffffff26;
+  color: #fff;
+  border: 2px solid #ffffff4d;
+  font-size: 26px;
+}
+.footer-lead .contributor-info {
+  gap: 4px;
+}
+.footer-lead .lead-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.footer-lead .contributor-info strong {
+  color: #fff;
+  font-size: 21px;
+  font-weight: 700;
+}
+.footer-lead .contributor-info > span:last-child {
+  font-size: 15px;
+  color: #ffffffd9;
+}
+.lead-role {
+  white-space: nowrap;
+}
+.lead-badge {
+  flex-shrink: 0;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--lead-to);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+/* Two team columns hang from the lead card. */
+.contributor-teams {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+  padding-top: 26px;
+}
+.contributor-teams::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 12px;
+  border-left: 1.5px solid var(--tree-line);
+}
+.contributor-teams::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 25%;
+  right: 25%;
+  height: 12px;
+  border: 1.5px solid var(--tree-line);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+.team-web {
+  --team: var(--team-web);
+  --team-soft: var(--team-web-soft);
+  --team-tint: var(--team-web-tint);
+}
+.team-data {
+  --team: var(--team-data);
+  --team-soft: var(--team-data-soft);
+  --team-tint: var(--team-data-tint);
+}
+.contributor-team h4 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--team);
+}
+.contributor-team h4::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--team);
+}
+.contributor-team h4 > span {
+  color: var(--muted);
+  font-weight: 500;
+}
+.contributor-team .footer-contributor {
+  border-color: transparent;
+  border-left: 3px solid var(--team);
+  background: var(--team-soft);
+}
+.contributor-team .footer-contributor:hover {
+  border-color: var(--team);
+}
+.contributor-team .contributor-avatar {
+  background: var(--team-tint);
+  color: var(--team);
 }
 .footer-bottom {
   display: flex;
@@ -2105,6 +2252,26 @@ input {
   }
   .footer-bottom {
     font-size: 11px;
+  }
+}
+
+@media (max-width: 430px) {
+  .contributor-teams {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding-top: 18px;
+  }
+  .contributor-teams::before,
+  .contributor-teams::after {
+    display: none;
+  }
+  .footer-contributor.footer-lead {
+    padding: 18px;
+  }
+  .footer-lead .contributor-avatar {
+    width: 50px;
+    height: 50px;
+    font-size: 22px;
   }
 }
 
