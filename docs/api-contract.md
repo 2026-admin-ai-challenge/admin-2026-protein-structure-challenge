@@ -84,7 +84,7 @@
   "dataset_available": true,
   "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21568, "bytes": 0}}},
   "limits": {"zip_bytes": 524288000, "inference_seconds": 600, "team_submissions": 10,
-             "required_entries": ["inference.py", "requirements.txt", "model/"]},
+             "required_entries": ["inference.py", "train.py", "requirements.txt", "model/"]},
   "evaluator": "mock",
   "teams": 10,
   "submissions": 37
@@ -103,7 +103,7 @@
  "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
 ```
 
-`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름), `class-distribution`, `length-distribution`입니다. 평가 입력에 해당하는 경로는 없습니다(404).
+`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
 
 ## 제출 (참가자)
 
@@ -185,9 +185,9 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 ```text
 code.zip
 ├── inference.py        필수
+├── train.py            필수. 채점 때 실행하지 않음
 ├── requirements.txt    필수. 사용 패키지 명세일 뿐, 채점 중 설치하지 않음
-├── model/              필수. 학습된 가중치와 전처리 객체
-└── train.py            선택. 채점에는 쓰지 않음
+└── model/              필수. 학습된 가중치와 전처리 객체
 ```
 
 - 필수 항목은 **ZIP 최상위**에 있어야 합니다. 목록은 환경변수 `ZIP_REQUIRED`.

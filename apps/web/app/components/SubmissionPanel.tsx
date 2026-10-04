@@ -239,11 +239,15 @@ export default function SubmissionPanel({
               </p>
               <pre>
                 {"code.zip\n" +
-                  required.map((item) => "├── " + item).join("\n") +
-                  (required.length ? "\n" : "") +
-                  "└── train.py   (선택)"}
+                  required
+                    .map(
+                      (item, i) =>
+                        (i === required.length - 1 ? "└── " : "├── ") + item,
+                    )
+                    .join("\n")}
               </pre>
               <p>
+                train.py는 채점 때 실행하지 않지만 반드시 함께 넣어야 합니다.
                 채점 중에는 인터넷과 패키지 설치를 쓸 수 없습니다.
                 requirements.txt는 사용한 패키지를 알리는 용도입니다.
               </p>

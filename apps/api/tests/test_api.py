@@ -28,6 +28,17 @@ def test_registration_is_gone_and_login_uses_issued_id(client, db, participant):
     assert client.post("/api/auth/login", json={"username": " TeamLearner ", "password": participant["password"]}).status_code == 200
 
 
+def test_one_team_id_can_be_signed_in_on_several_devices(client, db, participant):
+    # Teams share one issued ID, so a new login must not sign out the members already in.
+    first = client.cookies.get("admin_session")
+    client.cookies.clear()
+    second = login(client, participant)
+    assert first and second
+    for session in (first, second):
+        client.cookies.set("admin_session", session)
+        assert client.get("/api/submissions/me").status_code == 200
+
+
 def test_admin_issues_resets_and_blocks_accounts(client, db, organizer):
     client.cookies.set("admin_session", organizer)
     team = client.post("/api/admin/teams", json={"name": "Folders"})
@@ -88,6 +99,7 @@ def test_zip_is_stored_and_queued_without_scoring(client, db, participant):
     (b"this is not a zip archive", "code.zip", 422, "zip_invalid"),
     (b"", "code.zip", 422, "zip_invalid"),
     (make_zip({"inference.py": "x", "model/w.bin": "x"}), "code.zip", 422, "zip_invalid"),
+    (make_zip({"inference.py": "x", "requirements.txt": "x", "model/w.bin": "x"}), "code.zip", 422, "zip_invalid"),
     (make_zip({"code/inference.py": "x", "code/requirements.txt": "x", "code/model/w.bin": "x"}), "code.zip", 422, "zip_invalid"),
     (make_zip(extra={"../escape.txt": "x"}), "code.zip", 422, "zip_invalid"),
 ])
@@ -170,17 +182,19 @@ def test_settings_validation_and_audit(client, db, organizer):
     saved = client.patch("/api/admin/competition", json={"team_submission_limit": 7, "count_failed": False, "final_selection": "best_private"})
     assert saved.status_code == 200 and saved.json()["team_submission_limit"] == 7
     public = client.get("/api/competition").json()
-    assert public["limits"]["team_submissions"] == 7 and public["limits"]["required_entries"] == ["inference.py", "requirements.txt", "model/"]
+    assert public["limits"]["team_submissions"] == 7 and public["limits"]["required_entries"] == ["inference.py", "train.py", "requirements.txt", "model/"]
     # Undecided policies are organizer-only, not announced to participants.
     assert "final_selection" not in json.dumps(public) and "count_failed" not in json.dumps(public)
     assert db.scalars(select(AuditLog).where(AuditLog.action == "settings.update")).all()
 
 
 EVALUATION_INPUT = ["test", "test-structures", "test-features", "sample-submission", "starter-kit"]
-PARTICIPANT_FILES = ["train", "train-features", "train-structures", "validation-split", "class-distribution", "length-distribution"]
+# The analysis charts sit in data/public but are for the organizers' presentation only.
+ANALYSIS_CHARTS = ["class-distribution", "length-distribution"]
+PARTICIPANT_FILES = ["train", "train-features", "train-structures", "validation-split"]
 
 
-@pytest.mark.parametrize("kind", EVALUATION_INPUT + ["labels", "private"])
+@pytest.mark.parametrize("kind", EVALUATION_INPUT + ANALYSIS_CHARTS + ["labels", "private"])
 def test_evaluation_input_is_never_downloadable(client, db, participant, kind):
     assert client.get("/api/datasets/" + kind).status_code == 404
 

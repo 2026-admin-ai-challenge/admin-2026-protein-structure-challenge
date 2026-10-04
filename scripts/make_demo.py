@@ -56,7 +56,8 @@ def archive(files):
 
 
 def submission(inference, extra=None):
-    return archive({"inference.py": inference, "requirements.txt": "# standard library only\n",
+    return archive({"inference.py": inference, "train.py": "# training code; not run during scoring\n",
+                    "requirements.txt": "# standard library only\n",
                     "model/model.json": json.dumps({"label": "3.40"}), **(extra or {})})
 
 
@@ -70,7 +71,7 @@ def main():
     for directory in (public, private, eval_input):
         directory.mkdir(parents=True, exist_ok=True)
 
-    (out / "code.zip").write_bytes(submission(INFERENCE, {"train.py": "# optional: not used for scoring\n"}))
+    (out / "code.zip").write_bytes(submission(INFERENCE))
     (out / "code_crash.zip").write_bytes(submission(CRASH))
     (out / "code_bad_output.zip").write_bytes(submission(BAD_OUTPUT))
     (out / "code_mock_timeout.zip").write_bytes(submission(INFERENCE, {"mock.json": json.dumps({"fail": "timeout"})}))

@@ -33,7 +33,7 @@ MAX_ZIP_ENTRIES = _int("MAX_ZIP_ENTRIES", 2000)
 
 # PROVISIONAL (Q2): root entries every submission must contain. A trailing slash means directory.
 ZIP_REQUIRED = tuple(
-    item.strip() for item in os.getenv("ZIP_REQUIRED", "inference.py,requirements.txt,model/").split(",") if item.strip()
+    item.strip() for item in os.getenv("ZIP_REQUIRED", "inference.py,train.py,requirements.txt,model/").split(",") if item.strip()
 )
 
 MAX_JSON_BYTES = 64 * 1024

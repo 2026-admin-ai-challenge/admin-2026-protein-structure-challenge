@@ -59,7 +59,8 @@ HEADERS = {"X-Requested-With": "ADMIN-Challenge"}
 def make_zip(files=None, extra=None):
     """A valid submission ZIP by default; pass `files` to replace its contents."""
     if files is None:
-        files = {"inference.py": "print('predict')\n", "requirements.txt": "numpy\n", "model/weights.bin": b"\x00" * 16}
+        files = {"inference.py": "print('predict')\n", "train.py": "print('train')\n", "requirements.txt": "numpy\n",
+                 "model/weights.bin": b"\x00" * 16}
     files = {**files, **(extra or {})}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:

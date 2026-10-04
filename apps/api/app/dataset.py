@@ -10,7 +10,9 @@ from .config import DATA_DIR
 
 # Participant downloads. Evaluation input (test.csv, test_features.csv, test_structures.zip)
 # and the old data-bearing starter kit are deliberately absent: models are scored on the
-# server, so participants never receive evaluation input.
+# server, so participants never receive evaluation input. The data team's analysis charts
+# (class_distribution.png, sequence_length_distribution.png) are kept for the presentation
+# and are not distributed either.
 # PROVISIONAL: `example` is the small public input/output example the data team will add.
 PUBLIC_FILES = {
     "train": "train.csv",
@@ -18,10 +20,8 @@ PUBLIC_FILES = {
     "train-structures": "train_structures.zip",
     "validation-split": "validation_split.csv",
     "example": "example_io.zip",
-    "class-distribution": "class_distribution.png",
-    "length-distribution": "sequence_length_distribution.png",
 }
-MEDIA_TYPES = {".csv": "text/csv", ".png": "image/png", ".zip": "application/zip"}
+MEDIA_TYPES = {".csv": "text/csv", ".zip": "application/zip"}
 
 
 def metadata():

@@ -62,9 +62,14 @@ export default function DataPanel({ data }: { data: Competition | null }) {
                 {new Date(data.settings.end_time).toLocaleString("ko-KR")}
               </p>
             )}
+            {/* Inside this box so it reads as the training data being locked,
+                not the baseline below. */}
+            <button className="btn secondary" disabled>
+              <Lock size={15} /> 학습 데이터 다운로드 잠김
+            </button>
           </div>
         </div>
-        <div className="info-box">
+        <div className="info-box baseline-box">
           <FileText size={24} />
           <div>
             <h3>베이스라인은 지금 준비할 수 있어요.</h3>
@@ -74,13 +79,10 @@ export default function DataPanel({ data }: { data: Competition | null }) {
               받은 뒤 가능합니다.
             </p>
             <a className="btn primary" href="/api/resources/baseline">
-              <Download size={15} /> 베이스라인 코드 미리 받기
+              <Download size={17} /> 베이스라인 코드 미리 받기
             </a>
           </div>
         </div>
-        <button className="btn secondary" disabled>
-          <Lock size={15} /> 다운로드 잠김
-        </button>
       </div>
     );
   return (
@@ -115,7 +117,7 @@ export default function DataPanel({ data }: { data: Competition | null }) {
           </strong>
         </div>
       </div>
-      <div className="info-box">
+      <div className="info-box baseline-box">
         <Activity size={24} />
         <div>
           <h3>처음이라면 베이스라인부터.</h3>
@@ -125,7 +127,7 @@ export default function DataPanel({ data }: { data: Competition | null }) {
             활용하는 자료이며, 쓰지 않는 모델도 채점됩니다.
           </p>
           <a className="btn primary" href="/api/resources/baseline">
-            <Download size={15} /> 베이스라인 코드 받기
+            <Download size={17} /> 베이스라인 코드 받기
           </a>
         </div>
       </div>
@@ -174,16 +176,6 @@ export default function DataPanel({ data }: { data: Competition | null }) {
             남으므로 Rules를 반드시 확인하세요.
           </p>
         </div>
-      </div>
-      <div className="chart-grid">
-        <img
-          src="/api/datasets/class-distribution"
-          alt="Architecture별 샘플 수 분포"
-        />
-        <img
-          src="/api/datasets/length-distribution"
-          alt="단백질 서열 길이 분포"
-        />
       </div>
       <h3>Structure format</h3>
       <p className="body-copy">

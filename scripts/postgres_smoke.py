@@ -24,7 +24,7 @@ HEADERS={'X-Requested-With':'ADMIN-Challenge'}
 def code_zip(marker=''):
     buffer=io.BytesIO()
     with zipfile.ZipFile(buffer,'w') as archive:
-        for name,content in {'inference.py':'print(1)\n','requirements.txt':'\n','model/weights.bin':'weights'+marker}.items(): archive.writestr(name,content)
+        for name,content in {'inference.py':'print(1)\n','train.py':'print(0)\n','requirements.txt':'\n','model/weights.bin':'weights'+marker}.items(): archive.writestr(name,content)
     return buffer.getvalue()
 
 try:
