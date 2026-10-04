@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 
 from ..config import INFERENCE_TIMEOUT_SECONDS, REPO_ROOT
+from ..errors import FAILURES
 from ..zipcheck import ZipRejected, inspect, safe_extract
 from .base import Evaluator, Outcome, failure
 
@@ -175,7 +176,8 @@ class DockerEvaluator(Evaluator):
         if code == 137:
             return failure("out_of_memory", log=log)
         if code != 0:
-            return failure("runtime_error", log=f"exit code {code}\n{log}")
+            # Only the exit status reaches the team, never container output.
+            return failure("runtime_error", f"{FAILURES['runtime_error']} (종료 코드 {code})", f"exit code {code}\n{log}")
 
         result = output_dir / OUTPUT_NAME
         # The container owns /output: never follow a link it may have planted there.

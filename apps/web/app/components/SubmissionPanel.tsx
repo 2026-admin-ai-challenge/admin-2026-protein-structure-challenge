@@ -319,6 +319,7 @@ export default function SubmissionPanel({
                       )}
                       {s.status === "failed" && (
                         <small className="row-error">
+                          {s.failure_code ? `[오류 코드: ${s.failure_code}] ` : ""}
                           {s.error_message}
                           {s.failure_code && FAILURE_HELP[s.failure_code]
                             ? " " + FAILURE_HELP[s.failure_code]
