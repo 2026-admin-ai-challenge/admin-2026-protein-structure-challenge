@@ -38,6 +38,9 @@ ZIP_REQUIRED = tuple(
 
 MAX_JSON_BYTES = 64 * 1024
 
+# Prediction file contract shared with the data team (copied from admin-2026-protein-data).
+PREDICTION_CONTRACT = Path(__file__).resolve().parents[1] / "contract" / "prediction_contract.json"
+
 # "mock" produces fake scores for development. "docker" runs the real isolated inference.
 EVALUATOR = os.getenv("EVALUATOR", "mock").lower()
 if EVALUATOR not in {"mock", "docker"}:

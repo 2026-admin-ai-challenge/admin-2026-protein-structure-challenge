@@ -175,8 +175,14 @@ def test_real_predictions_are_scored_against_hidden_labels(client, db, participa
     upload(client)
     bad = process_one(db, Fixed(b"id,label\nT1,a\nT2,SECRET-SEQUENCE\nT3,b\n"), "worker-a", answers)
     assert (bad.status, bad.failure_code) == ("failed", "output_invalid")
-    # The message reports counts only; echoing values could leak hidden evaluation input.
-    assert "SECRET" not in bad.error_message and "1종" in bad.error_message
+    # The message reports codes and counts only; echoing values could leak hidden evaluation input.
+    assert "SECRET" not in bad.error_message and "[E502]" in bad.error_message and "[E401]" in bad.error_message
+    assert "SECRET-SEQUENCE" in bad.log_tail and "container output" in bad.log_tail and bad.counted
+
+    upload(client)
+    broken = process_one(db, Fixed(b"id,label\nT1,a\nT2,b\nT3,a\nT4,b\n"), "worker-a", lambda: (labels, []))
+    assert (broken.status, broken.failure_code, broken.counted) == ("failed", "system_error", False)
+    assert "E901" in broken.log_tail
 
 
 def test_frozen_board_keeps_scoring_but_hides_new_ranks(client, db, participant, organizer):

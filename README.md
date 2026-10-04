@@ -141,6 +141,7 @@ worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨�
 - `apps/web/app/`: 화면. `components/`(참가자 패널), `components/admin/`(관리자 섹션), `lib/api.ts`(API 호출)
 - `apps/api/app/routers/`: `auth`, `public`, `submissions`, `admin`
 - `apps/api/app/worker.py`, `evaluators/`: 채점 작업자와 평가기(mock, docker)
+- `apps/api/prediction_validator/`, `contract/`: 데이터팀 예측 파일 검증기와 계약(복사본, 여기서 수정하지 않음). `app/scoring/`에서 호출
 - `apps/api/app/zipcheck.py`, `storage.py`, `files.py`: ZIP 검사, 비공개 저장, 파일 기록(`submission_files`) 관리
 - `apps/api/app/accounts.py`: 계정 발급과 시트 동기화
 - `apps/api/migrations/`: DB 스키마

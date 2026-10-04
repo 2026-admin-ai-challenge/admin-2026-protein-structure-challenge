@@ -26,8 +26,8 @@ from .evaluators import get_evaluator
 from .evaluators.base import failure
 from .leaderboard import rebuild
 from .models import Settings, Submission, Worker, now
+from .scoring.predictions import OutputRejected, check
 from .scoring.scorer import score
-from .scoring.validator import SubmissionError, validate
 
 log = logging.getLogger("worker")
 POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "2"))
@@ -87,11 +87,15 @@ def grade(outcome, answers):
     """Turns raw predictions into Public/Private scores using hidden labels."""
     labels, classes = answers()
     try:
-        predictions = validate(outcome.predictions, labels.id.tolist(), classes)
-    except SubmissionError as error:
-        return failure("output_invalid", str(error), outcome.log)
+        predictions, summary = check(outcome.predictions, labels.id.tolist(), classes)
+    except OutputRejected as error:
+        log = "\n".join(filter(None, [outcome.log, error.detail]))
+        if error.operator_fault:  # the checker could not read classes or IDs: not the team's fault
+            return failure("system_error", log=log)
+        return failure("output_invalid", str(error), log)
     outcome.scores = score(labels, predictions, classes)
     outcome.predictions = json.dumps(predictions).encode()
+    outcome.log = "\n".join(filter(None, [outcome.log, summary]))
     return outcome
 
 
