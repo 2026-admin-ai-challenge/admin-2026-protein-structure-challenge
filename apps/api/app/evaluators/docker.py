@@ -5,7 +5,9 @@ only, plus one writable output directory. It never receives labels, the Public/P
 split, database credentials or the Docker socket, and it has no network.
 
 PROVISIONAL contract (to be fixed with the data team, Q2):
-    working directory /submission, command `python inference.py --input /input --output /output/predictions.csv`
+    working directory /submission,
+    command `python inference.py --input /input/test_features.csv --output /output/predictions.csv`
+    /input also holds test.csv (id,sequence) and test_structures.zip, like the starter kit.
     output: UTF-8 CSV with header `id,label`, one row per evaluation ID.
 """
 import collections
@@ -23,7 +25,7 @@ from ..zipcheck import ZipRejected, inspect, safe_extract
 from .base import Evaluator, Outcome, failure
 
 IMAGE = os.getenv("EVAL_IMAGE", "admin-evaluator:latest")
-COMMAND = os.getenv("EVAL_COMMAND", "python inference.py --input /input --output /output/predictions.csv")
+COMMAND = os.getenv("EVAL_COMMAND", "python inference.py --input /input/test_features.csv --output /output/predictions.csv")
 CPUS = os.getenv("EVAL_CPUS", "4")
 MEMORY = os.getenv("EVAL_MEMORY", "8g")
 PIDS = os.getenv("EVAL_PIDS", "256")

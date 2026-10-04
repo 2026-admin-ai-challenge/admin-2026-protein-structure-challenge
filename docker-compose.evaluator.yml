@@ -4,7 +4,9 @@
 #   docker compose -f docker-compose.yml -f docker-compose.evaluator.yml up --build -d
 #
 # Requires in .env: EVAL_WORK_HOST_DIR (an empty host directory for unpacked submissions)
-# and EVAL_INPUT_HOST_DIR (the hidden evaluation input the data team prepared).
+# and EVAL_INPUT_HOST_DIR (the hidden evaluation input the data team prepared: a separate
+# directory holding only test.csv, test_features.csv and test_structures.zip, never
+# data/private itself, which also contains the labels).
 #
 # The worker controls the host Docker daemon through the socket, which is equivalent to
 # root on the host. Only the worker gets it: never the API, never a participant container.
@@ -17,6 +19,7 @@ services:
     environment:
       EVALUATOR: docker
       EVAL_IMAGE: ${EVAL_IMAGE:-admin-evaluator:latest}
+      EVAL_COMMAND: ${EVAL_COMMAND:-python inference.py --input /input/test_features.csv --output /output/predictions.csv}
       EVAL_CPUS: ${EVAL_CPUS:-4}
       EVAL_MEMORY: ${EVAL_MEMORY:-8g}
       EVAL_PIDS: ${EVAL_PIDS:-256}

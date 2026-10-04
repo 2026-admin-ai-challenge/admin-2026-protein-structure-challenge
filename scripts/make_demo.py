@@ -10,7 +10,7 @@ Creates:
     var/demo/code_mock_timeout.zip  mock evaluator only                -> timeout
     var/demo/data/public/           metadata.json, train.csv           (DATA_HOST_DIR)
     var/demo/data/private/          labels.csv                         (worker only)
-    var/demo/eval-input/            test.csv                           (EVAL_INPUT_HOST_DIR)
+    var/demo/eval-input/            test.csv, test_features.csv        (EVAL_INPUT_HOST_DIR)
 
 The inference command and input layout follow the PROVISIONAL contract in
 docs/api-contract.md and will change once the data team fixes the real one.
@@ -24,7 +24,7 @@ from pathlib import Path
 
 LABELS = ["1.10", "2.60", "3.40"]
 
-INFERENCE = '''"""Demo inference: reads /input/test.csv, writes id,label predictions."""
+INFERENCE = '''"""Demo inference: reads the features CSV given by --input, writes id,label predictions."""
 import argparse, csv, json
 from pathlib import Path
 
@@ -33,7 +33,7 @@ parser.add_argument("--input", required=True)
 parser.add_argument("--output", required=True)
 args = parser.parse_args()
 label = json.loads(Path("model/model.json").read_text())["label"]
-with open(Path(args.input) / "test.csv", newline="") as source, open(args.output, "w", newline="") as target:
+with open(args.input, newline="") as source, open(args.output, "w", newline="") as target:
     writer = csv.writer(target)
     writer.writerow(["id", "label"])
     for row in csv.DictReader(source):
@@ -81,12 +81,16 @@ def main():
     sequence = lambda: "".join(rng.choice(amino) for _ in range(rng.randint(40, 120)))
     train = ["id,sequence,label"] + [f"TRAIN_{i:06d},{sequence()},{rng.choice(LABELS)}" for i in range(1, args.rows + 1)]
     test = ["id,sequence"]
+    features = ["id,length"]
     labels = ["id,label,partition"]
     for i in range(1, args.rows + 1):
-        test.append(f"TEST_{i:06d},{sequence()}")
+        residues = sequence()
+        test.append(f"TEST_{i:06d},{residues}")
+        features.append(f"TEST_{i:06d},{len(residues)}")
         labels.append(f"TEST_{i:06d},{rng.choice(LABELS)},{'public' if i % 10 < 3 else 'private'}")
     (public / "train.csv").write_text("\n".join(train) + "\n", encoding="utf-8")
     (eval_input / "test.csv").write_text("\n".join(test) + "\n", encoding="utf-8")
+    (eval_input / "test_features.csv").write_text("\n".join(features) + "\n", encoding="utf-8")
     (private / "labels.csv").write_text("\n".join(labels) + "\n", encoding="utf-8")
     (public / "metadata.json").write_text(json.dumps({
         "version": "FAKE-demo-1", "labels": LABELS,

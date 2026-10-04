@@ -200,10 +200,15 @@ code.zip
 
 ```text
 작업 디렉터리  /submission        (ZIP을 푼 내용, 읽기 전용)
-명령          python inference.py --input /input --output /output/predictions.csv
+명령          python inference.py --input /input/test_features.csv --output /output/predictions.csv
 입력          /input              (숨긴 평가 입력, 읽기 전용)
+                test_features.csv     id + 특징 31개 (train_features.csv와 같은 열)
+                test.csv              id,sequence
+                test_structures.zip   샘플별 NPZ 구조 (train_structures.zip과 같은 형식)
 출력          /output/predictions.csv   UTF-8, 헤더 id,label, 평가 ID마다 정확히 한 줄
 ```
+
+`--input`은 데이터팀 베이스라인과 같이 **특징 CSV 파일 경로**입니다. 서열이나 구조를 쓰는 모델은 같은 폴더(`Path(args.input).parent`)의 `test.csv`, `test_structures.zip`을 읽습니다. 서버의 `EVAL_INPUT_HOST_DIR`에는 이 세 파일만 둔 별도 폴더를 지정하고, 정답이 들어 있는 `data/private`를 그대로 연결하지 않습니다.
 
 - 네트워크 없음, 읽기 전용 루트, 일반 사용자(65534), CPU·메모리·프로세스 수 제한, `/tmp`만 쓰기 가능.
 - 정답, Public/Private 분할표, DB 정보, Docker 소켓은 컨테이너에 주지 않습니다. 정답 비교는 컨테이너 밖 worker가 합니다.
