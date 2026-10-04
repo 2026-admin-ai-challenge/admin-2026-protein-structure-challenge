@@ -1,13 +1,12 @@
-import {
-  FileText,
-  Download,
-  ShieldCheck,
-  ExternalLink,
-  Activity,
-} from "lucide-react";
-import type { Competition } from "../types";
-const fmt = (n?: number) => (n === undefined ? "—" : n.toLocaleString());
-export default function EvaluationPanel() {
+import { Activity } from "lucide-react";
+import { minutes } from "../format";
+import type { Limits } from "../types";
+
+export default function EvaluationPanel({
+  limits,
+}: {
+  limits: Limits | undefined;
+}) {
   return (
     <div className="page-content narrow">
       <div className="section-kicker">FAIR BY DESIGN</div>
@@ -45,6 +44,30 @@ export default function EvaluationPanel() {
           예시 Macro F1 = (0.90 + 0.75 + 0.65) / 3 = <b>0.76667</b>
         </p>
       </div>
+      <h3>제출한 모델은 이렇게 채점됩니다</h3>
+      <div className="steps">
+        <div>
+          <b>1. 접수</b>
+          <p>ZIP을 올리면 접수 ID를 받고 채점 대기열에 들어갑니다.</p>
+        </div>
+        <div>
+          <b>2. 추론</b>
+          <p>
+            서버가 인터넷이 차단된 격리 환경에서 숨겨진 평가 입력으로 추론
+            코드를 실행합니다.
+            {limits
+              ? ` 추론은 최대 ${minutes(limits.inference_seconds)}입니다.`
+              : ""}
+          </p>
+        </div>
+        <div>
+          <b>3. 채점</b>
+          <p>
+            모델이 만든 예측 파일을 서버가 정답과 비교합니다. 참가자에게는 Public
+            점수와 오류 사유만 보여줍니다.
+          </p>
+        </div>
+      </div>
       <h3>Two stages. One final result.</h3>
       <div className="split-bar">
         <div>Public · 30%</div>
@@ -54,13 +77,14 @@ export default function EvaluationPanel() {
         <p>
           <b>Public leaderboard</b>
           <br />
-          제출 즉시 공개되는 참고 점수입니다. 시험 데이터 중 어떤 샘플인지
-          공개하지 않습니다.
+          채점이 끝나면 공개되는 참고 점수입니다. 팀의 최고 Public 점수가 실시간
+          순위에 반영됩니다. 평가 데이터 중 어떤 샘플인지는 공개하지 않습니다.
         </p>
         <p>
           <b>Final leaderboard</b>
           <br />
-          대회 종료 후 나머지 70%에서 계산한 점수로 최종 순위를 결정합니다.
+          대회 종료 후 나머지 70%에서 계산한 Private 점수로 최종 순위를
+          결정합니다. 최종 순위에 반영할 제출물의 선택 방식은 추후 공지합니다.
         </p>
       </div>
       <div className="info-box">
@@ -68,8 +92,8 @@ export default function EvaluationPanel() {
         <p>
           전체 허용 클래스에 대해 F1을 평균하며, 예측이 없는 클래스의 F1은 0으로
           처리합니다. 점수는 소수점 5자리로 표시하되, 순위는 원래 정밀도로
-          계산합니다. 동점은 먼저 달성한 제출이 우선합니다. 최종 순위는 팀의
-          가장 높은 Private 점수를 사용합니다.
+          계산합니다. 예측 파일에는 모든 평가 ID가 정확히 한 번씩 있어야 하고
+          허용된 클래스만 쓸 수 있습니다.
         </p>
       </div>
     </div>

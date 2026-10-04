@@ -1,18 +1,77 @@
+"""Read-only access to the dataset prepared by the data team.
+
+The API only ever reads DATA_DIR/public. Hidden answers (DATA_DIR/private) are read by
+the scoring worker alone, so the web-facing process cannot leak them.
+"""
+import hashlib
 import json
-import pandas as pd
-from fastapi import HTTPException
+
 from .config import DATA_DIR
 
+# Participant downloads. Evaluation input (test.csv, test_features.csv, test_structures.zip)
+# and the old data-bearing starter kit are deliberately absent: models are scored on the
+# server, so participants never receive evaluation input. The data team's analysis charts
+# (class_distribution.png, sequence_length_distribution.png) are kept for the presentation
+# and are not distributed either.
+# PROVISIONAL: `example` is the small public input/output example the data team will add.
+PUBLIC_FILES = {
+    "train": "train.csv",
+    "train-features": "train_features.csv",
+    "train-structures": "train_structures.zip",
+    "validation-split": "validation_split.csv",
+    "example": "example_io.zip",
+}
+MEDIA_TYPES = {".csv": "text/csv", ".zip": "application/zip"}
+
+
 def metadata():
-    path=DATA_DIR/"public/metadata.json"
-    return json.loads(path.read_text()) if path.exists() else None
+    path = DATA_DIR / "public/metadata.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def public_metadata():
+    """Metadata for participants, without entries describing files they cannot download."""
+    meta = metadata()
+    if not meta:
+        return None
+    allowed = set(PUBLIC_FILES.values())
+    return {**meta, "files": {name: info for name, info in (meta.get("files") or {}).items() if name in allowed}}
+
+
+def hash_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def public_file_report(with_hashes=False):
+    meta = metadata() or {}
+    described = meta.get("files") or {}
+    report = []
+    for kind, name in PUBLIC_FILES.items():
+        path = DATA_DIR / "public" / name
+        entry = {"kind": kind, "name": name, "present": path.exists(), "rows": (described.get(name) or {}).get("rows")}
+        if path.exists():
+            entry["bytes"] = path.stat().st_size
+            if with_hashes:
+                entry["sha256"] = hash_file(path)
+        report.append(entry)
+    return report
+
 
 def answers():
-    path=DATA_DIR/"private/labels.csv";meta=metadata()
-    if not path.exists() or not meta: raise HTTPException(503,"운영자가 데이터셋을 준비 중입니다.")
-    frame=pd.read_csv(path,dtype=str)
-    test=pd.read_csv(DATA_DIR/"public/test.csv",dtype=str)
-    if not frame.id.is_unique or set(frame.id)!=set(test.id) or set(frame.partition)!={"public","private"}:
+    """Hidden labels and the allowed class list. Worker only."""
+    import pandas as pd
+
+    path = DATA_DIR / "private/labels.csv"
+    meta = metadata()
+    if not path.exists() or not meta:
+        raise RuntimeError("Hidden labels or dataset metadata are not available")
+    frame = pd.read_csv(path, dtype=str)
+    if not frame.id.is_unique or set(frame.partition) != {"public", "private"}:
         raise RuntimeError("Private dataset integrity check failed")
-    if not set(frame.label)<=set(meta["labels"]): raise RuntimeError("Invalid private label")
-    return frame,meta["labels"]
+    if not set(frame.label) <= set(meta["labels"]):
+        raise RuntimeError("Invalid private label")
+    return frame, meta["labels"]

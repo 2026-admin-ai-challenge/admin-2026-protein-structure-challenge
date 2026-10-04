@@ -6,3 +6,7 @@
 data/private
 data/raw
 work
+.venv
+var
+accounts
+**/.pytest_cache

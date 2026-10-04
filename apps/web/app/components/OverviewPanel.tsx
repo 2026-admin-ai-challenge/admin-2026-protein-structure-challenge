@@ -27,21 +27,21 @@ import {
   Lock,
   RotateCcw,
 } from "lucide-react";
-import type { User, Submission, Settings, Meta } from "../types";
-import { date, localTime } from "../format";
-import Empty from "./Empty";
+import type { Entry, Limits, Meta } from "../types";
+import { megabytes } from "../format";
+import { LeaderboardTable } from "./LeaderboardPanel";
 export default function OverviewPanel({
   stat,
   datasetAvailable,
-  settings,
+  limits,
+  entries,
   navigate,
-  table,
 }: {
   stat: Meta["stats"] | undefined;
   datasetAvailable: boolean;
-  settings: Settings | undefined;
+  limits: Limits | undefined;
+  entries: Entry[];
   navigate: (tab: string) => void;
-  table: (preview?: boolean) => React.ReactNode;
 }) {
   return (
     <>
@@ -56,9 +56,10 @@ export default function OverviewPanel({
             예측합니다.
           </p>
           <p className="body-copy">
-            간단한 베이스라인에서 당신만의 모델로.
+            제공된 학습 데이터로 모델을 학습하고, 학습된 모델과 추론 코드를
+            ZIP으로 제출하세요.
             <br />
-            제공된 서열과 좌표에서 구조를 구별하는 패턴을 찾아보세요.
+            서버가 숨겨진 평가 데이터로 추론을 실행해 점수를 계산합니다.
           </p>
           <div className="tags">
             <span>Bioinformatics</span>
@@ -88,7 +89,7 @@ export default function OverviewPanel({
               <div className="step-icon target">
                 <Layers3 size={21} />
               </div>
-              <small>03 · PREDICTION</small>
+              <small>03 · SCORED ON SERVER</small>
               <strong>Architecture</strong>
               <code>CATH label · 3.40</code>
             </div>
@@ -105,8 +106,8 @@ export default function OverviewPanel({
             작은 호기심을 첫 번째 모델로.
             <br />
             {datasetAvailable
-              ? "데이터를 내려받고 도전을 시작하세요."
-              : "데이터셋은 대회 당일, 시작 시각에 공개됩니다."}
+              ? "학습 데이터를 내려받고 도전을 시작하세요."
+              : "학습 데이터는 대회 시작 시각에 공개됩니다."}
           </p>
           <div className="quick-line">
             <span>Dataset</span>
@@ -119,12 +120,16 @@ export default function OverviewPanel({
             </strong>
           </div>
           <div className="quick-line">
-            <span>Daily submissions</span>
-            <strong>{settings?.daily_limit ?? 5} / day</strong>
+            <span>Submissions per team</span>
+            <strong>
+              {limits ? limits.team_submissions + "회 · 대회 전체" : "—"}
+            </strong>
           </div>
           <div className="quick-line">
             <span>Submission format</span>
-            <code>CSV</code>
+            <code>
+              Model ZIP{limits ? " · " + megabytes(limits.zip_bytes) : ""}
+            </code>
           </div>
           <div className="quick-actions">
             {datasetAvailable ? (
@@ -133,7 +138,7 @@ export default function OverviewPanel({
                   className="btn primary quick-action"
                   onClick={() => navigate("Data")}
                 >
-                  <span>데이터셋 다운로드</span>
+                  <span>학습 데이터 다운로드</span>
                   <ArrowRight size={17} />
                 </button>
                 <a
@@ -173,7 +178,7 @@ export default function OverviewPanel({
             </p>
           </div>
           <div className="quick-foot">
-            <ShieldCheck size={13} /> 단백질 계열을 분리한 학습·시험 데이터
+            <ShieldCheck size={13} /> 단백질 계열을 분리한 학습·평가 데이터
           </div>
         </aside>
       </div>
@@ -241,7 +246,7 @@ export default function OverviewPanel({
           View full leaderboard <ArrowRight size={15} />
         </button>
       </div>
-      {table(true)}
+      <LeaderboardTable entries={entries} preview />
       <div className="about-banner">
         <div className="about-logo">
           <img src="/admin-logo.png" alt="ADMIN" />
