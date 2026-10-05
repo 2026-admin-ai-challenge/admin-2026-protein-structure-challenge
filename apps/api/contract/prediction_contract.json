@@ -1,7 +1,7 @@
 {
   "contract_version": "0.2.0-draft",
   "status": "DRAFT",
-  "updated": "2026-10-02",
+  "updated": "2026-10-04",
   "owner": "윤성 (데이터팀 / 예측 출력 검증)",
   "derived_from": {
     "repo": "2026-admin-ai-challenge/admin-2026-protein-data",
@@ -10,7 +10,7 @@
       "scripts/prepare_dataset.py (ID 형식, 라벨 생성, 파일 목록)",
       "scripts/baseline.py (예측 파일 저장 형태)",
       "docs/starter-guide.md (label = CATH Architecture C.A, dtype=str 요구)",
-      "docs/dataset.md (26,961 / train 21,568 / test 5,393 / 20 classes, Public 30 / Private 70)"
+      "docs/dataset.md (26,932 / train 21,545 / test 5,387 / 20 classes, Public 30 / Private 70)"
     ]
   },
   "note": "status=CONFIRMED 항목은 생성 코드에서 직접 확인했다. status=TEMP 항목은 운영진 확정 전 임시값이며 임의로 확정하지 않는다.",
@@ -28,7 +28,7 @@
     "require_header": true,
     "max_file_bytes": 10485760,
     "max_file_bytes_status": "TEMP",
-    "expected_rows": 5393,
+    "expected_rows": 5387,
     "expected_rows_status": "CONFIRMED"
   },
 

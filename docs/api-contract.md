@@ -82,7 +82,7 @@
                "team_submission_limit": 10, "frozen": false, "finalized": false},
   "submission_open": true,
   "dataset_available": true,
-  "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21568, "bytes": 0}}},
+  "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21545, "bytes": 0}}},
   "limits": {"zip_bytes": 524288000, "inference_seconds": 600, "team_submissions": 10,
              "required_entries": ["inference.py", "train.py", "requirements.txt", "model/"]},
   "evaluator": "mock",
