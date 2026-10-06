@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app import storage
-from app.models import AuditLog, Settings, Submission, User, now
+from app.models import AuditLog, Competition, Settings, Submission, User, now
 from conftest import add_account, login, make_zip, upload
 
 PARTICIPANT_PATHS = ["/api/competition", "/api/submissions/me", "/api/leaderboard"]
@@ -202,6 +202,12 @@ def test_evaluation_input_is_never_downloadable(client, db, participant, kind):
 def test_metadata_does_not_describe_hidden_files(client, db):
     dataset = client.get("/api/competition").json()["dataset"]
     assert "train.csv" in dataset["files"] and "test.csv" not in dataset["files"]
+
+
+def test_competition_info_does_not_name_the_topic(client, db):
+    assert "Protein" in db.get(Competition, 1).title
+    response = client.get("/api/competition")
+    assert "title" not in response.json() and "protein" not in response.text.lower()
 
 
 @pytest.mark.parametrize("kind", PARTICIPANT_FILES)

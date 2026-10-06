@@ -77,7 +77,6 @@
 
 ```json
 {
-  "title": "ADMIN Protein Structure Classification Challenge",
   "settings": {"is_open": true, "start_time": "2026-10-24T00:00:00Z", "end_time": "2026-10-24T09:00:00Z",
                "team_submission_limit": 10, "frozen": false, "finalized": false},
   "submission_open": true,
@@ -95,6 +94,7 @@
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
 - 미확정 정책(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다.
+- 대회 이름(`title`)도 넣지 않습니다. 이름에 대회 주제가 드러나는데, 이 응답은 대회 시작 전에도 누구나 받기 때문입니다.
 
 `GET /leaderboard?board=public|final`
 

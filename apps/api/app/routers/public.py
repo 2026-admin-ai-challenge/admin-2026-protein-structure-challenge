@@ -7,7 +7,7 @@ from ..config import DATA_DIR
 from ..dataset import MEDIA_TYPES, PUBLIC_FILES, metadata, public_metadata
 from ..db import get_db
 from ..leaderboard import listing
-from ..models import Competition, Settings, Submission, User
+from ..models import Settings, Submission, User
 from ..security import optional_user
 from .common import dataset_available, evaluator_name, launched, limits_view, settings_view, submission_open
 
@@ -24,8 +24,8 @@ def health(db=Depends(get_db)):
 def competition(db=Depends(get_db)):
     settings = db.get(Settings, 1)
     available = dataset_available(settings)
+    # No title: it names the topic, and the web does not show it.
     return {
-        "title": db.get(Competition, 1).title,
         "settings": settings_view(settings),
         "submission_open": submission_open(settings),
         "dataset_available": available,
