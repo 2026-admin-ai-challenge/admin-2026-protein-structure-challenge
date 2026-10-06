@@ -1,0 +1,492 @@
+/* Pre-launch D-day countdown: always dark, in the site's purple. Self-contained,
+   because the site's globals.css is not loaded here (it would reveal the topic). */
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;650&family=Manrope:wght@700;800&family=Noto+Sans+KR:wght@400;500;650&display=swap");
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #0e0d14;
+  color: #ebe7f4;
+  font-family: "DM Sans", "Noto Sans KR", sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid #9586e4;
+  outline-offset: 4px;
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+svg {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.soon {
+  --muted: #9d95ab;
+  --purple: #a997ef;
+  position: relative;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow: clip;
+  color-scheme: dark;
+  background:
+    radial-gradient(55% 45% at 50% 36%, #6452bc4d, transparent 72%),
+    radial-gradient(40% 35% at 88% 105%, #45378f59, transparent 70%),
+    radial-gradient(35% 30% at 6% 0%, #5142a040, transparent 70%),
+    #0e0d14;
+}
+.soon-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(#a997ef12 1px, transparent 1px),
+    linear-gradient(90deg, #a997ef12 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black, transparent);
+  pointer-events: none;
+}
+.soon-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px 32px;
+}
+.soon-brand {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.soon-brand img {
+  width: 94px;
+  height: 36px;
+  object-fit: contain;
+  filter: invert(1);
+}
+.soon-brand-divider {
+  width: 1px;
+  height: 19px;
+  background: #ffffff2b;
+}
+.soon-brand > span:last-child {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+.soon-main {
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 56px;
+  text-align: center;
+  word-break: keep-all;
+  text-wrap: balance;
+}
+.soon-art {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  z-index: -1;
+  width: min(820px, 150vw);
+  opacity: 0.2;
+  transform: translate(-50%, -50%);
+  animation: soon-float 14s ease-in-out infinite;
+  pointer-events: none;
+}
+.soon-net {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.soon-net-edges {
+  stroke: #a997ef;
+  stroke-opacity: 0.28;
+  stroke-width: 1;
+}
+.soon-net circle {
+  fill: #14121c;
+  stroke: #a997ef;
+  stroke-width: 2;
+  animation: soon-node 3s ease-in-out infinite;
+}
+.soon-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 1.65px;
+  color: var(--purple);
+}
+.soon-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--purple);
+  flex-shrink: 0;
+  animation: soon-pulse 2.2s ease-out infinite;
+}
+.soon-dday {
+  margin: 14px 0 4px;
+  padding: 0 0.04em;
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(92px, 19vw, 212px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+  color: transparent;
+  background: linear-gradient(180deg, #fff 18%, #d3c9ff 58%, #8b77e2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 12px 48px #6452bc99);
+}
+.soon-title {
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(22px, 3.2vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.3;
+}
+.soon-title span {
+  color: var(--purple);
+}
+.soon-sub {
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.soon-clock {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 108px));
+  gap: 12px;
+  margin-top: 34px;
+}
+.soon-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0 15px;
+  border: 1px solid #a997ef33;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #a997ef14, #ffffff05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.soon-unit strong {
+  font-family: "Manrope", sans-serif;
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.soon-unit span {
+  margin-top: 11px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 1.8px;
+  line-height: 1;
+  color: var(--muted);
+}
+.soon-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 30px;
+  padding: 15px 30px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7d68e3, #5142a0);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.2;
+  box-shadow:
+    0 12px 40px #6452bc66,
+    inset 0 1px 0 #ffffff33;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.soon-apply:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 16px 52px #6452bc99,
+    inset 0 1px 0 #ffffff40;
+}
+.soon-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding: 9px 18px;
+  border: 1px solid #a997ef40;
+  border-radius: 999px;
+  background: #6452bc26;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 1px;
+  color: #d9d1fa;
+}
+.soon-korean {
+  margin-top: 22px;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.soon-footer {
+  position: relative;
+  padding: 0 16px 28px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: #6f687c;
+}
+.soon-login {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border: 1px solid #a997ef40;
+  border-radius: 999px;
+  background: #ffffff08;
+  color: #d9d1fa;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.soon-login:hover {
+  background: #a997ef1f;
+  border-color: #a997ef80;
+}
+.soon-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #07060bcc;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.soon-modal {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 32px 32px;
+  border: 1px solid #a997ef33;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #1d1a28, #15131d);
+  box-shadow: 0 30px 90px #000000aa;
+  word-break: keep-all;
+}
+.soon-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+}
+.soon-close:hover {
+  background: #ffffff10;
+  color: #fff;
+}
+.soon-kicker {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 1.8px;
+  color: var(--purple);
+}
+.soon-modal h2 {
+  margin-top: 6px;
+  font-family: "Manrope", "Noto Sans KR", sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.soon-modal p {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.soon-modal form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+.soon-modal label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #cfc8dc;
+}
+.soon-modal input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #3a3449;
+  border-radius: 10px;
+  background: #0e0d14;
+  font-size: 15px;
+  outline: none;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.soon-modal input:focus {
+  border-color: #a997ef;
+  box-shadow: 0 0 0 3px #a997ef33;
+}
+.soon-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #3a2028;
+  color: #f0b3b8;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.soon-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 13px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #7d68e3, #5142a0);
+  color: #fff;
+  font-weight: 650;
+}
+.soon-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+@keyframes soon-pulse {
+  0% {
+    box-shadow: 0 0 0 0 #a997ef99;
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px #a997ef00;
+  }
+}
+@keyframes soon-node {
+  50% {
+    fill: #a997ef;
+  }
+}
+@keyframes soon-float {
+  50% {
+    transform: translate(-50%, -53%) rotate(2deg);
+  }
+}
+@media (max-width: 560px) {
+  .soon-header {
+    padding: 22px 16px;
+  }
+  .soon-login {
+    padding: 7px 13px;
+    font-size: 12px;
+  }
+  .soon-modal {
+    padding: 32px 22px 24px;
+  }
+  .soon-brand {
+    gap: 14px;
+  }
+  .soon-brand img {
+    width: 78px;
+    height: 30px;
+  }
+  .soon-art {
+    top: 34%;
+  }
+  .soon-clock {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    max-width: 380px;
+    margin-top: 32px;
+  }
+  .soon-unit {
+    padding: 15px 0 12px;
+    border-radius: 12px;
+  }
+  .soon-unit strong {
+    font-size: 30px;
+  }
+  .soon-unit span {
+    font-size: 9px;
+    letter-spacing: 1.2px;
+  }
+  .soon-apply {
+    width: 100%;
+    max-width: 380px;
+    justify-content: center;
+    margin-top: 28px;
+  }
+  .soon-date {
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    padding: 8px 14px;
+  }
+  .soon-korean {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .soon-art,
+  .soon-dot,
+  .soon-net circle {
+    animation: none;
+  }
+  .soon-apply {
+    transition: none;
+  }
+}
+@media (max-width: 400px) {
+  .soon-brand-divider,
+  .soon-brand > span:last-child {
+    display: none;
+  }
+}

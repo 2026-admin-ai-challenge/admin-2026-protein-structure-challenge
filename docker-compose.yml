@@ -70,6 +70,10 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    environment:
+      # Empty keeps the built-in values (apps/web/app/launch.ts).
+      LAUNCH_AT: ${LAUNCH_AT:-}
+      APPLY_URL: ${APPLY_URL:-}
     depends_on:
       api:
         condition: service_healthy
