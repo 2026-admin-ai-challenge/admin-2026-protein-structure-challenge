@@ -248,6 +248,18 @@ def test_public_baseline_is_code_only_even_when_competition_closed(client, db):
     assert client.get("/api/resources/starter-kit").status_code == 404
 
 
+def test_baseline_names_the_topic_so_only_admins_get_it_before_launch(client, db, organizer, monkeypatch):
+    monkeypatch.setattr("app.routers.common.LAUNCH_AT", now() + timedelta(days=1))
+    assert client.get("/api/resources/baseline").status_code == 403
+    login(client, add_account(db, "Early Team", "earlyteam1"))
+    assert client.get("/api/resources/baseline").status_code == 403
+    client.cookies.set("admin_session", organizer)
+    assert client.get("/api/resources/baseline").status_code == 200
+    client.cookies.clear()
+    monkeypatch.setattr("app.routers.common.LAUNCH_AT", now() - timedelta(seconds=1))
+    assert client.get("/api/resources/baseline").status_code == 200
+
+
 def test_dataset_approval_verify_and_lock(client, db, organizer):
     from app.config import DATA_DIR
     settings = db.get(Settings, 1)

@@ -105,6 +105,8 @@
 
 `final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
 
+`GET /resources/baseline`은 데이터 없이 코드만 담은 베이스라인 ZIP입니다. 대회 기간과 상관없이 받을 수 있지만, 코드에 대회 주제가 드러나므로 `LAUNCH_AT` 전에는 관리자만 받고 나머지는 403입니다.
+
 ## 제출 (참가자)
 
 `POST /submissions`: 본문은 **ZIP 원본 바이트**, 헤더 `X-Filename: <URL 인코딩한 파일 이름>`, `Content-Type: application/zip`. 서버는 저장·기본 검사만 하고 즉시 `202`를 돌려줍니다. 여기서는 모델을 실행하지 않습니다.

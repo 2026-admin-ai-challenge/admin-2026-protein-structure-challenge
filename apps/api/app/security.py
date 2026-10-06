@@ -50,6 +50,14 @@ def current_user(request: Request, db=Depends(get_db)):
     return user
 
 
+def optional_user(request: Request, db=Depends(get_db)):
+    """The signed-in user, or None where signing in is optional."""
+    try:
+        return current_user(request, db)
+    except HTTPException:
+        return None
+
+
 def admin_user(user=Depends(current_user)):
     if user.role != "ADMIN":
         raise HTTPException(403, "관리자 권한이 필요합니다.")

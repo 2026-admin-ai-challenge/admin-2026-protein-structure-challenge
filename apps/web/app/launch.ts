@@ -1,6 +1,7 @@
 // Until the competition opens, only signed-in admins see the site (proxy.ts); everyone
 // else gets a D-day countdown that keeps the topic hidden. LAUNCH_AT (ISO 8601, e.g.
 // 2026-11-01T09:00:00+09:00) moves the opening; a past time opens the site right away.
+// apps/api/app/config.py reads the same variable and must keep the same default.
 const DEFAULT_LAUNCH = "2026-11-01T13:00:00+09:00";
 // Sign-up Google Form linked from the countdown. APPLY_URL overrides it; empty hides the button.
 const DEFAULT_APPLY_URL = "";

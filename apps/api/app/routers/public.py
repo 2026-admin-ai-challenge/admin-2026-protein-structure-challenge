@@ -8,7 +8,8 @@ from ..dataset import MEDIA_TYPES, PUBLIC_FILES, metadata, public_metadata
 from ..db import get_db
 from ..leaderboard import listing
 from ..models import Competition, Settings, Submission, User
-from .common import dataset_available, evaluator_name, limits_view, settings_view, submission_open
+from ..security import optional_user
+from .common import dataset_available, evaluator_name, launched, limits_view, settings_view, submission_open
 
 router = APIRouter(prefix="/api")
 
@@ -37,8 +38,11 @@ def competition(db=Depends(get_db)):
 
 
 @router.get("/resources/baseline")
-def public_baseline():
-    # Code-only archive; competition data stays behind the release gate.
+def public_baseline(user=Depends(optional_user)):
+    # Code-only archive; competition data stays behind the release gate. The code names
+    # the topic, so until launch only admins get it.
+    if not launched() and not (user and user.role == "ADMIN"):
+        raise HTTPException(403, "베이스라인 코드는 대회 시작 후 공개됩니다.")
     path = DATA_DIR / "public/baseline_code.zip"
     if not path.exists():
         raise HTTPException(503, "베이스라인을 준비 중입니다.")

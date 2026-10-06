@@ -38,6 +38,8 @@ services:
       <<: *backend-env
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Same as web: until then the baseline goes to admins only.
+      LAUNCH_AT: ${LAUNCH_AT:-}
     volumes:
       # Only participant files. Hidden labels are never mounted into the web-facing API.
       - ${DATA_HOST_DIR:-../admin-2026-protein-data/data}/public:/srv/data/public:ro
