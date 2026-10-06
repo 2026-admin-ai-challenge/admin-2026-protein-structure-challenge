@@ -99,7 +99,7 @@ docker run --rm -v admin-2026-protein-structure-challenge_submissions:/data:ro -
 
 DB 백업에는 Private 점수와 저장된 예측이 들어 있으므로 운영진만 접근하는 곳에 둡니다. `docker compose down`은 데이터를 지우지 않습니다. `down -v`는 DB와 제출 ZIP을 **모두 삭제**합니다.
 
-대회 초기화로 보관된 기록과 ZIP(`archive/`)도 제출 볼륨에 있으므로 이 tar에 함께 들어갑니다.
+대회 초기화는 제출 ZIP, 점수, 조작 기록을 따로 보관하지 않고 영구 삭제합니다. 남겨야 하면 초기화 전에 위 백업을 받습니다.
 
 복구는 빈 DB에 `psql`로 백업을 넣고 제출 볼륨에 tar를 풉니다. 수상 후보의 최종 제출물과 검증 기록은 재현 심사가 끝날 때까지 보관합니다.
 

@@ -90,7 +90,8 @@ def update_competition(body: SettingsPatch, admin=Depends(admin_user), db=Depend
 
 @router.post("/competition/reset")
 def reset_competition(body: CompetitionReset, admin=Depends(admin_user), db=Depends(get_db)):
-    """Clears submissions, ZIPs and rankings for the next competition. Accounts and teams stay."""
+    """Deletes submissions, ZIPs, rankings and the audit log for good, for the next competition.
+    Accounts and teams stay. The reset itself becomes the first entry of the new audit log."""
     if body.confirm.strip() != reset.CONFIRM_PHRASE:
         raise HTTPException(422, f'확인 문구 "{reset.CONFIRM_PHRASE}"를 정확히 입력하세요.')
     s = locked_settings(db)
@@ -99,20 +100,15 @@ def reset_competition(body: CompetitionReset, admin=Depends(admin_user), db=Depe
     running = reset.scoring_now(db)
     if running:
         raise HTTPException(409, f"채점 중인 제출이 {running}건 있습니다. 채점이 끝난 뒤 초기화하세요.")
-    summary, moves = reset.clear(db, s)
+    summary = reset.clear(db, s)
     record(db, admin, "competition.reset", "competition", summary)
-    try:
+    db.commit()
+    # After the commit: a ZIP that cannot be deleted stays on disk, and the file check reports it.
+    not_deleted = reset.delete_files()
+    if not_deleted:
+        record(db, admin, "competition.reset", "files", {"not_deleted": not_deleted}, ok=False)
         db.commit()
-    except Exception:
-        db.rollback()
-        reset.discard_archive(summary)
-        raise
-    # After the commit: a ZIP that cannot be moved stays in place, and the file check reports it.
-    not_moved = reset.move_files(moves)
-    if not_moved:
-        record(db, admin, "competition.reset", "archive", {"not_moved": not_moved}, ok=False)
-        db.commit()
-    return {**summary, "not_moved": not_moved, "settings": admin_settings_view(s)}
+    return {**summary, "not_deleted": not_deleted, "settings": admin_settings_view(s)}
 
 
 # ---- Teams and accounts -------------------------------------------------------------------

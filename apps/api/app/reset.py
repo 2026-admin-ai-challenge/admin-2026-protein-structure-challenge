@@ -1,25 +1,21 @@
 """Clearing a finished competition so the same site can host the next one.
 
-Submissions, their ZIPs and both leaderboards are archived under ARCHIVE_DIR and removed
-from the database. Teams, accounts, policies, dataset approval and the audit log stay.
+Submissions, their ZIPs, both leaderboards, the audit log and worker status are deleted
+for good and numbering starts again from 1; nothing is kept aside, so organizers back up
+first if they need them. Teams, accounts, policies and dataset approval stay.
 """
-import json
-import os
-import tempfile
+import time
 from datetime import timedelta
-from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 
-from . import storage
-from .config import ARCHIVE_DIR, WORKER_STALE_SECONDS
-from .models import LeaderboardEntry, Submission, SubmissionFile, now
+from . import files, storage
+from .config import SUBMISSION_DIR, WORKER_STALE_SECONDS
+from .models import AuditLog, LeaderboardEntry, RateBucket, Submission, SubmissionFile, Worker, now
 
 CONFIRM_PHRASE = "초기화"
-
-
-def _snapshot(row):
-    return {column.name: getattr(row, column.name) for column in row.__table__.columns}
+# Children before parents: leaderboard entries and file records point at submissions.
+TABLES = [LeaderboardEntry, SubmissionFile, Submission, AuditLog, Worker, RateBucket]
 
 
 def scoring_now(db):
@@ -29,52 +25,38 @@ def scoring_now(db):
 
 
 def clear(db, settings):
-    """Removes every submission, file record and leaderboard entry and returns the competition
-    to closed, unscheduled and not finalized. The caller holds the settings lock and commits.
-
-    The removed rows are written to <archive>/records.json first. Returns (summary, moves):
-    the ZIPs to move into the archive with move_files() once the commit succeeded."""
-    submissions = db.scalars(select(Submission).order_by(Submission.id)).all()
-    stored = db.scalars(select(SubmissionFile).order_by(SubmissionFile.id)).all()
-    entries = db.scalars(select(LeaderboardEntry).order_by(LeaderboardEntry.id)).all()
-    summary = {"archive": None, "submissions": len(submissions), "files": 0, "leaderboard_entries": len(entries),
+    """Empties the competition tables and returns the competition to closed, unscheduled and
+    not finalized. The caller holds the settings lock, records the reset and commits."""
+    summary = {"submissions": db.scalar(select(func.count(Submission.id))),
+               "files": db.scalar(select(func.count(SubmissionFile.id)).where(SubmissionFile.deleted_at.is_(None))),
+               "leaderboard_entries": db.scalar(select(func.count(LeaderboardEntry.id))),
+               "audit_entries": db.scalar(select(func.count(AuditLog.id))),
                "previous": {key: getattr(settings, key) for key in ["start_time", "end_time", "frozen", "finalized"]}}
-    moves = []
-    if submissions or entries:
-        stamp = now()
-        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-        folder = Path(tempfile.mkdtemp(prefix=f"reset-{stamp:%Y%m%dT%H%M%SZ}-", dir=ARCHIVE_DIR))
-        records = {"reset_at": stamp, "settings": _snapshot(settings), "submissions": [_snapshot(r) for r in submissions],
-                   "submission_files": [_snapshot(r) for r in stored], "leaderboard_entries": [_snapshot(r) for r in entries]}
-        (folder / "records.json").write_text(json.dumps(records, ensure_ascii=False, default=str, indent=1), encoding="utf-8")
-        moves = [(storage.path_for(f.storage_key), folder / "zips" / f"team{f.team_id}-submission{f.submission_id}.zip")
-                 for f in stored if not f.deleted_at]
-        summary["archive"], summary["files"] = str(folder), len(moves)
-    # Children first: leaderboard entries and file records point at submissions.
-    db.execute(delete(LeaderboardEntry))
-    db.execute(delete(SubmissionFile))
-    db.execute(delete(Submission))
+    if db.bind.dialect.name == "postgresql":
+        # Also restarts the ID sequences, inside this transaction.
+        db.execute(text(f"TRUNCATE {', '.join(model.__table__.name for model in TABLES)} RESTART IDENTITY"))
+    else:
+        # SQLite hands out IDs from 1 again once a table is empty.
+        for model in TABLES:
+            db.execute(delete(model))
     settings.is_open = settings.frozen = settings.finalized = False
     settings.start_time = settings.end_time = None
     db.flush()
-    return summary, moves
+    return summary
 
 
-def move_files(moves):
-    """Moves ZIPs into the archive. Returns the ones that stayed where they were, with the reason."""
+def delete_files():
+    """Deletes every stored ZIP, including ones no record pointed at, and interrupted uploads
+    older than an hour. Returns the files still on disk, with the reason."""
+    if not SUBMISSION_DIR.exists():
+        return []
+    cutoff = time.time() - files.STALE_UPLOAD_SECONDS
+    targets = [path for path in SUBMISSION_DIR.glob("*/*.zip") if path.parent.name != "incoming"]
+    targets += [path for path in (SUBMISSION_DIR / "incoming").glob("*.part") if path.stat().st_mtime < cutoff]
     failed = []
-    for source, target in moves:
+    for path in targets:
         try:
-            target.parent.mkdir(exist_ok=True)
-            os.replace(source, target)
+            storage.discard(path)
         except OSError as error:
-            failed.append(f"{source.name}: {error.strerror or error}")
+            failed.append(f"{path.name}: {error.strerror or error}")
     return failed
-
-
-def discard_archive(summary):
-    """Removes the records file of a reset whose commit failed, so the archive only holds real resets."""
-    if summary["archive"]:
-        folder = Path(summary["archive"])
-        storage.discard(folder / "records.json")
-        folder.rmdir()

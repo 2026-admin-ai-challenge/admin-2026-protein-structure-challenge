@@ -21,8 +21,6 @@ APP_ORIGIN = os.getenv("APP_ORIGIN", "http://localhost:3000")
 
 # Uploaded ZIPs live outside every web-served path and outside the read-only data mount.
 SUBMISSION_DIR = Path(os.getenv("SUBMISSION_DIR", str(REPO_ROOT / "var" / "submissions")))
-# Submissions and records cleared by a competition reset are kept here, in the same volume.
-ARCHIVE_DIR = SUBMISSION_DIR / "archive"
 
 # Confirmed by organizers: compressed ZIP 500 MB, inference 10 minutes, 10 submissions per team.
 MAX_ZIP_BYTES = _int("MAX_ZIP_BYTES", 500 * 1024 * 1024)
