@@ -69,6 +69,11 @@ class SettingsPatch(BaseModel):
         return v
 
 
+class CompetitionReset(BaseModel):
+    # The organizer types the confirmation phrase, so a stray request cannot wipe a competition.
+    confirm: str = Field(max_length=40)
+
+
 class BanPatch(BaseModel):
     banned: bool
 

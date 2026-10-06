@@ -21,6 +21,8 @@ APP_ORIGIN = os.getenv("APP_ORIGIN", "http://localhost:3000")
 
 # Uploaded ZIPs live outside every web-served path and outside the read-only data mount.
 SUBMISSION_DIR = Path(os.getenv("SUBMISSION_DIR", str(REPO_ROOT / "var" / "submissions")))
+# Submissions and records cleared by a competition reset are kept here, in the same volume.
+ARCHIVE_DIR = SUBMISSION_DIR / "archive"
 
 # Confirmed by organizers: compressed ZIP 500 MB, inference 10 minutes, 10 submissions per team.
 MAX_ZIP_BYTES = _int("MAX_ZIP_BYTES", 500 * 1024 * 1024)
@@ -37,6 +39,9 @@ ZIP_REQUIRED = tuple(
 )
 
 MAX_JSON_BYTES = 64 * 1024
+
+# A running submission whose worker stopped reporting for this long counts as abandoned.
+WORKER_STALE_SECONDS = _int("WORKER_STALE_SECONDS", 120)
 
 # Prediction file contract shared with the data team (copied from admin-2026-protein-data).
 PREDICTION_CONTRACT = Path(__file__).resolve().parents[1] / "contract" / "prediction_contract.json"

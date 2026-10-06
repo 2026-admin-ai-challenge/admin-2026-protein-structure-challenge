@@ -11,6 +11,8 @@ x-backend-env: &backend-env
   ZIP_REQUIRED: ${ZIP_REQUIRED:-inference.py,train.py,requirements.txt,model/}
   INFERENCE_TIMEOUT_SECONDS: ${INFERENCE_TIMEOUT_SECONDS:-600}
   TEAM_SUBMISSION_LIMIT: ${TEAM_SUBMISSION_LIMIT:-10}
+  # The API reads it too, to tell a live scoring run from an abandoned one.
+  WORKER_STALE_SECONDS: ${WORKER_STALE_SECONDS:-120}
 
 services:
   postgres:
@@ -58,7 +60,6 @@ services:
     environment:
       <<: *backend-env
       MOCK_DELAY_SECONDS: ${MOCK_DELAY_SECONDS:-5}
-      WORKER_STALE_SECONDS: ${WORKER_STALE_SECONDS:-120}
     volumes:
       - submissions:/srv/submissions:ro
     depends_on:
