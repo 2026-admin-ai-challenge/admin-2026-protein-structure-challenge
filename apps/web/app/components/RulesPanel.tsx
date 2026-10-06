@@ -25,7 +25,7 @@ export default function RulesPanel({ limits }: { limits: Limits | undefined }) {
       "04",
       "팀당 제출 횟수",
       limits
-        ? `대회 전체 기간에 팀당 최대 ${limits.team_submissions}회 제출할 수 있습니다. 날짜가 바뀌어도 초기화되지 않습니다. 실패한 제출의 차감 기준은 추후 공지합니다.`
+        ? `대회 전체 기간에 팀당 최대 ${limits.team_submissions}회 제출할 수 있습니다. 날짜가 바뀌어도 초기화되지 않습니다. ZIP 규격 위반과 서버 오류를 제외한 모든 실패는 1회 차감됩니다.`
         : "대회 전체 기간의 팀당 제출 횟수가 정해져 있으며 날짜가 바뀌어도 초기화되지 않습니다.",
     ],
     [
