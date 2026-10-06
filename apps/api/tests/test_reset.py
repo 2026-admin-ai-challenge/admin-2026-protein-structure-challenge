@@ -50,7 +50,7 @@ def test_reset_deletes_results_and_the_next_competition_starts_clean(client, db,
     settings = result["settings"]
     assert not (settings["is_open"] or settings["frozen"] or settings["finalized"])
     assert settings["start_time"] is None and settings["end_time"] is None
-    assert settings["team_submission_limit"] == 10  # policies are kept
+    assert settings["team_submission_limit"] == 20  # policies are kept
     for model in [Submission, SubmissionFile, LeaderboardEntry, Worker]:
         assert db.scalars(select(model)).all() == []
     # The ZIPs are gone from disk with any orphan and stale upload; nothing was kept aside.
@@ -78,7 +78,7 @@ def test_reset_deletes_results_and_the_next_competition_starts_clean(client, db,
     client.cookies.clear()
     login(client, participant)
     again = upload(client)
-    assert again.status_code == 202 and (again.json()["used"], again.json()["remaining"]) == (1, 9)
+    assert again.status_code == 202 and (again.json()["used"], again.json()["remaining"]) == (1, 19)
     assert again.json()["id"] == 1 and db.scalar(select(SubmissionFile.id)) == 1
 
 

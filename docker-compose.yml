@@ -10,7 +10,7 @@ x-backend-env: &backend-env
   MAX_ZIP_ENTRIES: ${MAX_ZIP_ENTRIES:-2000}
   ZIP_REQUIRED: ${ZIP_REQUIRED:-inference.py,train.py,requirements.txt,model/}
   INFERENCE_TIMEOUT_SECONDS: ${INFERENCE_TIMEOUT_SECONDS:-600}
-  TEAM_SUBMISSION_LIMIT: ${TEAM_SUBMISSION_LIMIT:-10}
+  TEAM_SUBMISSION_LIMIT: ${TEAM_SUBMISSION_LIMIT:-20}
   # The API reads it too, to tell a live scoring run from an abandoned one.
   WORKER_STALE_SECONDS: ${WORKER_STALE_SECONDS:-120}
 

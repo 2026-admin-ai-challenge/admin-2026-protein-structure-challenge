@@ -73,7 +73,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 | --- | --- | --- |
 | `MAX_ZIP_BYTES` | 524288000 (500 MB) | 확정 |
 | `INFERENCE_TIMEOUT_SECONDS` | 600 | 확정 |
-| `TEAM_SUBMISSION_LIMIT` | 10 | 새 DB의 초기값. 이후 관리자 화면에서 변경 |
+| `TEAM_SUBMISSION_LIMIT` | 20 | 새 DB의 초기값. 이후 관리자 화면에서 변경 |
 | `MAX_UNZIPPED_BYTES` | 2147483648 | **임시**. 운영진 결정 후 변경 |
 | `MAX_ZIP_ENTRIES` | 2000 | **임시** |
 | `ZIP_REQUIRED` | `inference.py,train.py,requirements.txt,model/` | **임시**. 데이터팀과 확정 |

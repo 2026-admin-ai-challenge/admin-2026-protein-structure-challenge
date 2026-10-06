@@ -83,7 +83,7 @@ def test_zip_is_stored_and_queued_without_scoring(client, db, participant):
     assert response.status_code == 202, response.text
     body = response.json()
     assert body["status"] == "queued" and body["queue_position"] == 1 and body["public_score"] is None
-    assert (body["used"], body["limit"], body["remaining"]) == (1, 10, 9)
+    assert (body["used"], body["limit"], body["remaining"]) == (1, 20, 19)
     assert body["sha256"] == hashlib.sha256(content).hexdigest() and body["size_bytes"] == len(content)
     row = db.get(Submission, body["id"])
     assert row.filename == "my model.zip" and row.team_id == participant["team_id"]
