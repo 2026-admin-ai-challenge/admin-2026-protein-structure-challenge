@@ -7,14 +7,15 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from .. import files, storage
+from .. import files, reset, storage
 from ..accounts import create_user, random_password
 from ..audit import record
 from ..dataset import metadata, public_file_report
 from ..db import get_db
 from ..leaderboard import rebuild
 from ..models import AuditLog, LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now, utc
-from ..schemas import BanPatch, CountedPatch, FileDelete, LockPatch, SettingsPatch, TeamCreate, UserCreate
+from ..schemas import (BanPatch, CompetitionReset, CountedPatch, FileDelete, LockPatch, SettingsPatch, TeamCreate,
+                       UserCreate)
 from ..security import admin_user, hasher
 from .common import (PENDING, admin_settings_view, evaluator_name, limits_view, queue_positions, submission_view,
                      used_attempts)
@@ -85,6 +86,29 @@ def update_competition(body: SettingsPatch, admin=Depends(admin_user), db=Depend
     record(db, admin, "settings.update", "competition", values)
     db.commit()
     return admin_settings_view(s)
+
+
+@router.post("/competition/reset")
+def reset_competition(body: CompetitionReset, admin=Depends(admin_user), db=Depends(get_db)):
+    """Deletes submissions, ZIPs, rankings and the audit log for good, for the next competition.
+    Accounts and teams stay. The reset itself becomes the first entry of the new audit log."""
+    if body.confirm.strip() != reset.CONFIRM_PHRASE:
+        raise HTTPException(422, f'확인 문구 "{reset.CONFIRM_PHRASE}"를 정확히 입력하세요.')
+    s = locked_settings(db)
+    if s.is_open:
+        raise HTTPException(409, "먼저 대회를 닫아 주세요.")
+    running = reset.scoring_now(db)
+    if running:
+        raise HTTPException(409, f"채점 중인 제출이 {running}건 있습니다. 채점이 끝난 뒤 초기화하세요.")
+    summary = reset.clear(db, s)
+    record(db, admin, "competition.reset", "competition", summary)
+    db.commit()
+    # After the commit: a ZIP that cannot be deleted stays on disk, and the file check reports it.
+    not_deleted = reset.delete_files()
+    if not_deleted:
+        record(db, admin, "competition.reset", "files", {"not_deleted": not_deleted}, ok=False)
+        db.commit()
+    return {**summary, "not_deleted": not_deleted, "settings": admin_settings_view(s)}
 
 
 # ---- Teams and accounts -------------------------------------------------------------------

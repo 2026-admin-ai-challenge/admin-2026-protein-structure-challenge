@@ -19,7 +19,7 @@ from datetime import timedelta
 from sqlalchemy import select, update
 
 from . import storage
-from .config import EVALUATOR
+from .config import EVALUATOR, WORKER_STALE_SECONDS as STALE_SECONDS
 from .db import SessionLocal
 from .errors import FAILURES, SYSTEM_FAILURES
 from .evaluators import get_evaluator
@@ -31,8 +31,6 @@ from .scoring.scorer import score
 
 log = logging.getLogger("worker")
 POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "2"))
-# A running submission whose worker stopped reporting for this long is taken back.
-STALE_SECONDS = int(os.getenv("WORKER_STALE_SECONDS", "120"))
 MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
 HEARTBEAT_SECONDS = 5
 

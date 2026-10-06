@@ -14,8 +14,14 @@ export class ApiError extends Error {
 
 function failure(status: number, body: unknown) {
   const data = (body ?? {}) as { detail?: unknown; code?: unknown };
+  // Without a message from the API, a 5xx is the server's side (e.g. the gateway's
+  // 502 page while the API restarts), not something the user typed.
+  const fallback =
+    status >= 500
+      ? "서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도하세요."
+      : "요청 정보를 확인해 주세요.";
   return new ApiError(
-    typeof data.detail === "string" ? data.detail : "요청 정보를 확인해 주세요.",
+    typeof data.detail === "string" ? data.detail : fallback,
     status,
     typeof data.code === "string" ? data.code : undefined,
   );

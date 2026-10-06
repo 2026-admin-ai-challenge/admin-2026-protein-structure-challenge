@@ -27,6 +27,29 @@ export default function SettingsSection({ onChanged }: { onChanged: () => void }
       onChanged();
     }, done);
   const alive = data?.workers.filter((w) => w.alive) ?? [];
+  const submissions = data
+    ? Object.values(data.queue).reduce((sum, n) => sum + n, 0)
+    : 0;
+  const reset = () => {
+    const typed = prompt(
+      `⚠ 대회 초기화는 되돌릴 수 없습니다.\n\n` +
+        `제출 ${submissions}건의 ZIP 파일과 점수, Public·최종 순위, 조작 기록이 서버에서 영구 삭제됩니다. 따로 백업하지 않으니 필요하면 먼저 직접 백업하세요.\n` +
+        `접수 번호는 1번부터 다시 시작하고 대회 일정도 지워집니다. 팀과 계정은 남습니다.\n\n` +
+        `계속하려면 "초기화"를 입력하세요.`,
+    )?.trim();
+    if (typed)
+      run(async () => {
+        const result = await send<{ not_deleted: string[] }>(
+          "/admin/competition/reset",
+          { confirm: typed },
+        );
+        onChanged();
+        if (result.not_deleted.length)
+          alert(
+            `ZIP ${result.not_deleted.length}개를 삭제하지 못했습니다. 조작 기록과 파일 정합성 검사를 확인하세요.`,
+          );
+      }, "대회를 초기화했습니다. 새 일정을 저장한 뒤 대회를 여세요.");
+  };
   return (
     <>
       <Feedback error={error} notice={notice} loading={loading} />
@@ -189,7 +212,7 @@ export default function SettingsSection({ onChanged }: { onChanged: () => void }
               onClick={() => {
                 if (
                   confirm(
-                    "최종 순위를 공개하면 대회를 다시 열 수 없습니다. Private 점수 기반 최종 순위를 공개할까요?",
+                    "최종 순위를 공개하면 대회를 다시 열 수 없습니다. 다시 하려면 대회 초기화로 제출과 순위를 모두 비워야 합니다. Private 점수 기반 최종 순위를 공개할까요?",
                   )
                 )
                   run(async () => {
@@ -241,6 +264,25 @@ export default function SettingsSection({ onChanged }: { onChanged: () => void }
                 확인하세요.
               </p>
             )}
+          </div>
+          <h3>대회 초기화</h3>
+          <p className="muted">
+            다음 대회를 위해 제출·ZIP·순위·조작 기록을 비우고 접수 번호와 일정,
+            동결·최종 공개 상태를 처음으로 되돌립니다. 팀·계정, 제출 정책,
+            데이터 승인은 그대로입니다. 대회를 닫은 뒤에만 할 수 있습니다.
+          </p>
+          <div className="alert error" role="note">
+            되돌릴 수 없습니다. 제출 ZIP과 점수·순위·조작 기록이 영구 삭제되며
+            따로 보관하지 않습니다. 필요하면 초기화 전에 직접 백업하세요.
+          </div>
+          <div className="admin-actions">
+            <button
+              className="btn secondary"
+              disabled={busy || settings.is_open}
+              onClick={reset}
+            >
+              Reset competition
+            </button>
           </div>
         </>
       )}

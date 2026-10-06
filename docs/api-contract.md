@@ -139,6 +139,7 @@
 | --- | --- |
 | `GET /admin/overview` | 설정 전체, 대기열 건수, 실패 코드별 건수, worker 상태 |
 | `PATCH /admin/competition` | `is_open`, `start_time`, `end_time`, `team_submission_limit`, `count_failed`, `final_selection`, `frozen` |
+| `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
 | `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
 | `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경 |
 | `POST /admin/users` `{"team_id","username"?}` | 계정 발급. `username`을 빼면 랜덤 10자리. 응답의 `temporary_password`는 **이때만** 나옴 |
