@@ -146,7 +146,7 @@ python inference.py --input sample_input/sample_features.csv --output sample_pre
 | sample/test 입력 이름 | 현재 계약·[Docker 평가기](../apps/api/app/evaluators/docker.py)는 서버의 `test.*` 이름을 사용합니다. | 4절에 따라 서열·구조 입력 이름 매핑을 합의하고 동일 코드의 로컬 샘플 추론과 서버 추론을 확인합니다. |
 | 두 ZIP 다운로드 | 현재 API·화면은 세 학습 파일, 검증 분할, 예제를 개별 다운로드합니다. 두 ZIP 경로는 아직 없습니다. | 데이터팀의 ZIP 생성과 웹팀의 허용 목록·메타데이터·버전/해시·승인/잠금·화면·API 계약을 함께 갱신합니다. |
 | 코드 전용 사전 배포 | [public 라우터](../apps/api/app/routers/public.py)의 `/resources/baseline`은 `baseline_code.zip`을 별도로 제공하고, 시작 전 일반 참가자에게는 차단합니다. [DataPanel](../apps/web/app/components/DataPanel.tsx)의 ‘미리 받기’ 표현 및 [과거 검증 기록](validation.md)의 사전 공개 설명과 차이가 있습니다. | 코드 전용 묶음을 두 다운로드에 통합할지, 별도 예외로 유지할지와 공개 시점을 정하고 안내를 맞춥니다. sample이 든 Starter Kit을 자동으로 사전 공개하지 않습니다. |
-| 패키지·Python 버전 | evaluator 명세는 초안이고 Python 패치 버전은 고정되지 않았습니다. | 실제 이미지 빌드·모델 추론 검증 근거를 확보한 후 `supported_packages.txt`를 확정합니다. API 컨테이너 테스트 통과를 evaluator 검증으로 대신하지 않습니다. |
+| 패키지·Python 버전 | evaluator 명세는 초안입니다. Python은 3.12.14로 고정했지만 이 버전으로 지원 패키지·실제 모델을 검증한 근거는 아직 없습니다. | 실제 이미지 빌드·모델 추론 검증 근거를 확보한 후 `supported_packages.txt`를 확정합니다. API 컨테이너 테스트 통과를 evaluator 검증으로 대신하지 않습니다. |
 | 구조·샘플·출력 스키마 | 계약은 구조 NPZ와 특징 31개를 사용하며 예측은 `id,label`, label은 문자열입니다. | 학습·샘플·서버 입력의 컬럼·NPZ 키·ID 대응을 데이터팀과 확인하고, 소량 공개 예제로 모델 로드부터 출력 검증까지 실행합니다. |
 
 배포 확정은 위 차이를 해소하고, 허용 목록대로 만든 두 ZIP에 비공개 자료가 없는지 확인한 뒤 진행합니다. 공개 데이터 파일을 Git에 올리지 않는다는 README의 원칙도 유지합니다.
