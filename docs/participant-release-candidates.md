@@ -38,7 +38,7 @@ ADMIN_2026_RELEASE/
 | --- | --- |
 | `README.md` | 두 다운로드의 구성, 버전, 압축 해제 위치, 학습→샘플 추론→제출 순서와 제출 ZIP 규격을 한 곳에서 안내합니다. |
 | `data/` | 참가자에게 공개하는 학습 자료를 코드·환경 안내와 구분합니다. |
-| `data/README.md` | 컬럼, ID 연결 방법, label 문자열 보존, 31개 특징, 구조 NPZ 형식 및 데이터 버전·해시를 설명합니다. |
+| `data/README.md` | 대회 전 발표자료의 내용만 포함합니다. 발표자료에 없는 설명은 추가하지 않습니다. |
 | `data/train.csv` | 학습용 `id`, 관측 `sequence`, 정답 label 등 확정된 스키마를 제공합니다. **학습 정답은 공개 대상**입니다. |
 | `data/train_features.csv` | `id`와 기본 특징 31개를 제공해 구조 전처리 없이도 베이스라인 학습이 가능하게 합니다. |
 | `data/train_structures.zip` | 선택적으로 활용할 학습용 Cα 좌표·마스크·잔기 위치 등의 NPZ 구조를 제공합니다. 사전 계산한 그래프 edge는 권장안에 포함하지 않습니다. |
@@ -119,7 +119,7 @@ python inference.py --input sample_input/sample_features.csv --output sample_pre
 | `admin2026_data.zip` | `ADMIN_2026_RELEASE/data/README.md`, `data/train.csv`, `data/train_features.csv`, `data/train_structures.zip` (모두 같은 루트 아래) | 큰 학습 자료를 한 번에 받고, 안내·코드 수정 때 데이터를 다시 받지 않아도 됩니다. |
 | `admin2026_starter_kit.zip` | `ADMIN_2026_RELEASE/README.md`, `starter_kit/` 전체, `environment/` 전체 (모두 같은 루트 아래) | 작은 코드·공개 샘플·환경 안내를 독립적으로 갱신하고, 참가자가 실행 계약을 쉽게 점검합니다. |
 
-두 ZIP을 같은 디렉터리에 풀면 1절의 트리가 완성되도록 제작합니다. 루트 README와 데이터 README에 호환되는 배포 버전·ZIP 이름·SHA-256 확인 방법을 안내합니다. Starter Kit에는 전체 학습 데이터나 실제 평가 입력을 중복해서 넣지 않습니다.
+두 ZIP을 같은 디렉터리에 풀면 1절의 트리가 완성되도록 제작합니다. 루트 README에 호환되는 배포 버전·ZIP 이름·SHA-256 확인 방법을 안내합니다. `data/README.md`에는 대회 전 발표자료의 내용만 포함합니다. Starter Kit에는 전체 학습 데이터나 실제 평가 입력을 중복해서 넣지 않습니다.
 
 이 두 ZIP은 **참가자가 받는 배포물**이며, 참가자가 서버에 올리는 모델 제출 ZIP과 다릅니다. 데이터가 든 두 배포물의 공개 시점과 권한은 현재 관리자 승인·대회 기간 조건을 존중해 확정합니다. ZIP 파일 제작, 다운로드 API·화면 교체, 공개 승인은 이 문서 추가만으로 수행되지 않습니다.
 
