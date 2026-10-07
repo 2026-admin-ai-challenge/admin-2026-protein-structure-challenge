@@ -30,6 +30,20 @@ ADMIN_2026_RELEASE/
     └── README.md
 ```
 
+### 현재 data/의 구조 ZIP 확인
+
+현재 로컬 `admin-2026-protein-data/data/`에서 다음 파일의 존재와 ZIP 무결성, 대응 CSV의 ID 일치를 확인했습니다(2026-10-07). 아래는 현재 산출물이며, 위 트리는 향후 배포 후보입니다.
+
+| 실제 경로 | 확인 결과와 배포 범위 |
+| --- | --- |
+| `data/public/train_structures.zip` | 학습 CSV와 ID가 일치하는 NPZ 21,536개가 있습니다. 공개 학습 구조 파일로 사용합니다. |
+| `data/public/example_structures.zip` | 공개 예제 입력 CSV와 ID가 일치하는 NPZ 3개가 있습니다. 현재 공개 예제 구조 파일입니다. |
+| `data/private/test_structures.zip` | 실제 숨긴 평가 구조 파일이 존재하며 평가 CSV와 ID가 일치합니다. 서버 전용으로 유지하고 공개 배포에는 포함하지 않습니다. |
+
+현재 파일명은 `train_structures.zip`, `example_structures.zip`, `test_structures.zip`입니다. `structure.zip`이나 `sample_structures.zip`이라는 파일은 현재 데이터 폴더에 없습니다. 위 후보 트리의 `sample_input/sample_structures.zip`은 기존 공개 `example_structures.zip`을 배포할 때 사용할 제안 경로이며, 이미 생성된 파일이라는 뜻이 아닙니다. 이름 변경 여부는 샘플 코드의 입력 경로와 함께 확정합니다.
+
+각 ZIP에서 확인한 NPZ 예제는 `residue_type`, `residue_index`, `segment_index`, `pos`, `ca_mask`의 다섯 배열을 포함합니다. 구조 규격은 데이터팀 저장소의 `docs/structure-format.md`를 함께 확인합니다.
+
 실제 평가 행을 샘플로 복사하지 않습니다. 공개 학습 데이터에서 뽑은 소량 샘플 또는 형식을 검증한 합성 예제를 사용하고, 세 입력 파일과 예제 출력의 ID가 서로 대응해야 합니다.
 
 ## 2. 각 파일·폴더를 포함하는 이유
@@ -41,7 +55,7 @@ ADMIN_2026_RELEASE/
 | `data/README.md` | 대회 전 발표자료의 내용만 포함합니다. 발표자료에 없는 설명은 추가하지 않습니다. |
 | `data/train.csv` | 학습용 `id`, 관측 `sequence`, 정답 label 등 확정된 스키마를 제공합니다. **학습 정답은 공개 대상**입니다. |
 | `data/train_features.csv` | `id`와 기본 특징 31개를 제공해 구조 전처리 없이도 베이스라인 학습이 가능하게 합니다. |
-| `data/train_structures.zip` | 선택적으로 활용할 학습용 Cα 좌표·마스크·잔기 위치 등의 NPZ 구조를 제공합니다. 사전 계산한 그래프 edge는 권장안에 포함하지 않습니다. |
+| `data/train_structures.zip` | 현재 `data/public/train_structures.zip`에 존재하는 학습용 NPZ 구조를 제공합니다. 배열은 `residue_type`, `residue_index`, `segment_index`, `pos`, `ca_mask`입니다. 사전 계산한 그래프 edge는 권장안에 포함하지 않습니다. |
 | `starter_kit/` | 공개 예제로 학습·추론·출력 형식을 연습하도록 최소 코드를 묶습니다. 참가자가 제출하는 ZIP 자체와는 구분합니다. |
 | `starter_kit/inference.py` | 저장된 모델·전처리 객체를 로드하고 입력으로부터 `id,label` 예측을 생성하는 서버 인터페이스 예제입니다. 평가 중 재학습하지 않습니다. |
 | `starter_kit/train.py` | 참가자 로컬에서 베이스라인을 학습·저장하고 재현하는 예제입니다. 현재 제출 규격에서도 필수지만 채점 때 실행하지 않습니다. |
@@ -49,7 +63,7 @@ ADMIN_2026_RELEASE/
 | `starter_kit/sample_input/` | 실제 평가 입력과 같은 형식을 가진 **공개 실행 점검용 입력**만 모읍니다. |
 | `sample_input/sample_features.csv` | 특징 CSV 경로를 받는 `--input` 인자와 31개 특징 처리 흐름을 점검합니다. |
 | `sample_input/sample.csv` | 공개 샘플의 `id,sequence`를 제공해 서열을 사용하는 모델도 입력을 시험할 수 있게 합니다. 평가 입력처럼 정답 열은 넣지 않습니다. |
-| `sample_input/sample_structures.zip` | 샘플 서열·특징에 대응하는 구조를 제공해 구조를 사용하는 추론을 점검합니다. |
+| `sample_input/sample_structures.zip` | 현재 공개 예제 구조인 `data/public/example_structures.zip`의 배포 후보 경로입니다. 샘플 서열·특징과 ID를 맞춰 구조를 사용하는 추론을 점검합니다. 실제 파일명 변경과 코드 대응은 확정이 필요합니다. |
 | `starter_kit/example_output.csv` | UTF-8 CSV의 `id,label` 컬럼 순서와 label 문자열 형식을 보여 줍니다. 공개 샘플 ID만 사용하며 숨긴 평가 정답·예측은 포함하지 않습니다. 점수 보장 파일이 아닙니다. |
 | `environment/` | 채점 환경과 참가자 코드의 패키지 명세를 구분해 안내합니다. |
 | `environment/supported_packages.txt` | 운영진이 검증한 고정 evaluator 환경의 공식 지원 패키지와 정확한 버전을 공개합니다. |
@@ -89,7 +103,7 @@ python inference.py --input /input/test_features.csv --output /output/prediction
 
 이 세 파일만 읽기 전용으로 참가자 추론 컨테이너에 연결합니다. 정답과 Public/Private 분할은 컨테이너 밖 worker만 읽으며, 정답이 있는 `data/private` 디렉터리를 `/input`으로 연결하지 않습니다. ‘서버 내부’라는 말은 이 입력 파일명을 문서에서 설명할 수 없다는 뜻이 아니라, **실제 평가 파일과 내용은 내려주지 않는다**는 뜻입니다.
 
-Starter Kit에서는 `sample_features.csv`, `sample.csv`, `sample_structures.zip`을 사용합니다. 실제 test를 받았다는 오해를 막고, 운영 배포 스크립트가 공개 예제와 비공개 평가 파일을 혼동할 가능성을 줄입니다. 이름만 다르고 입력 스키마는 같아야 합니다. 권장 로컬 실행 예시는 다음과 같습니다(`starter_kit/`에서 실행, 학습된 `model/` 필요).
+Starter Kit의 후보 파일명은 `sample_features.csv`, `sample.csv`, `sample_structures.zip`입니다. 현재 공개 예제는 각각 `example_features.csv`, `example_input.csv`, `example_structures.zip`으로 존재하므로, 배포 시 이름과 코드의 입력 경로를 함께 맞춰야 합니다. 실제 test를 받았다는 오해를 막고, 운영 배포 스크립트가 공개 예제와 비공개 평가 파일을 혼동할 가능성을 줄입니다. 이름만 다르고 입력 스키마는 같아야 합니다. 권장 로컬 실행 예시는 다음과 같습니다(`starter_kit/`에서 실행, 학습된 `model/` 필요).
 
 ```bash
 python inference.py --input sample_input/sample_features.csv --output sample_predictions.csv
