@@ -158,7 +158,6 @@ worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨�
 
 - [API·상태 계약](docs/api-contract.md): 네 사람이 같이 쓰는 응답 예시, 상태, 실패 코드, ZIP·추론 규격
 - [참가자 안내](docs/competition.md) · [평가 방식](docs/evaluation.md)
-- [참가자 배포 후보](docs/participant-release-candidates.md): 권장 파일 구조, 공개 금지 자료, 환경 검증 원칙과 두 ZIP 다운로드 협의안
 - [배포·운영](docs/deployment.md) · [운영진 가이드](docs/operations.md) · [임시 HTTPS 공유](docs/temporary-preview.md)
 - [수동 테스트 체크리스트](docs/manual-test-checklist.md) · [검증 기록](docs/validation.md)
 
