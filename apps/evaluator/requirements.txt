@@ -5,6 +5,14 @@ pandas==3.0.6
 scipy==1.18.1
 scikit-learn==1.9.1
 joblib==1.6.0
+threadpoolctl==3.7.0
+# Gradient boosting libraries used by the test submissions (versions match their requirements.txt).
+# A pickled model needs its library at load time, so each one has to be in the image.
+catboost==1.2.10
+# xgboost-cpu installs the same `xgboost` module as xgboost==3.4.1 without the ~300 MB
+# nvidia-nccl GPU dependency, which the CPU-only container never uses.
+xgboost-cpu==3.4.1
+lightgbm==4.7.0
 # CPU-only PyTorch wheel (no CUDA in the scoring container).
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.14.1
