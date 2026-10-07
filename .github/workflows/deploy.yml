@@ -59,17 +59,27 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh_opts="-i $HOME/.ssh/deploy_key -o BatchMode=yes"
+          host="ubuntu@$DEPLOY_HOST"
           root=admin-2026-protein-structure-challenge
+
+          # This job's own token can read the images it just pushed, and it expires with
+          # the job. Sent on stdin so it never appears in a command line.
+          printf '%s' "$REGISTRY_TOKEN" |
+            ssh $ssh_opts "$host" "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin"
+
           # Config the server reads from disk rather than from an image.
-          scp $ssh_opts docker-compose.yml docker-compose.ghcr.yml "ubuntu@$DEPLOY_HOST:~/$root/"
-          scp $ssh_opts deploy/nginx.conf "ubuntu@$DEPLOY_HOST:~/$root/deploy/"
-          ssh $ssh_opts "ubuntu@$DEPLOY_HOST" bash -s <<'REMOTE'
+          scp $ssh_opts docker-compose.yml docker-compose.ghcr.yml "$host:~/$root/"
+          scp $ssh_opts deploy/nginx.conf "$host:~/$root/deploy/"
+
+          ssh $ssh_opts "$host" bash -s <<'REMOTE'
           set -euo pipefail
           cd ~/admin-2026-protein-structure-challenge
           compose="docker compose -f docker-compose.yml -f docker-compose.ghcr.yml"
@@ -77,5 +87,7 @@ jobs:
           $compose up -d
           # One OCPU and 50 GB: old layers add up fast.
           docker image prune -f
+          # The token dies with this job; leaving it would only confuse a later pull.
+          docker logout ghcr.io
           $compose ps
           REMOTE
