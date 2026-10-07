@@ -1,11 +1,16 @@
 """Response shapes and gates shared by the routers. docs/api-contract.md mirrors these."""
 from sqlalchemy import func, select
 
-from ..config import EVALUATOR, INFERENCE_TIMEOUT_SECONDS, MAX_ZIP_BYTES, ZIP_REQUIRED
+from ..config import EVALUATOR, INFERENCE_TIMEOUT_SECONDS, LAUNCH_AT, MAX_ZIP_BYTES, ZIP_REQUIRED
 from ..dataset import metadata
 from ..models import Submission, Team, now, utc
 
 PENDING = ("queued", "running")
+
+
+def launched(stamp=None):
+    """Past LAUNCH_AT the topic is public; before it, what names the topic is for admins only."""
+    return (stamp or now()) >= LAUNCH_AT
 
 
 def submission_open(settings, stamp=None):

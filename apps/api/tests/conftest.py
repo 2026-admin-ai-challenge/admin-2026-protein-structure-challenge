@@ -11,6 +11,8 @@ os.environ.setdefault("SECRET_KEY", "test-only-secret-with-more-than-thirty-two-
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ["EVALUATOR"] = "mock"
 os.environ["MOCK_DELAY_SECONDS"] = "0"
+# Tests run after launch unless they move LAUNCH_AT themselves.
+os.environ["LAUNCH_AT"] = "2000-01-01T00:00:00+00:00"
 _scratch = tempfile.TemporaryDirectory(prefix="admin-api-test-")
 _data_dir = Path(_scratch.name) / "data"
 os.environ["DATA_DIR"] = str(_data_dir)

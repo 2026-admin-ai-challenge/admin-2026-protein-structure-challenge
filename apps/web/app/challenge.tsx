@@ -219,7 +219,7 @@ export default function Challenge({
             <p className="hero-korean">
               서열과 3D 구조에서 단백질의 Architecture를 분류하세요.
               <br />
-              충남대학교 AI 동아리 ADMIN과 함께하는 단백질 AI 챌린지.
+              충남대학교 컴퓨터인공지능학부 동아리 ADMIN과 함께하는 단백질 AI 챌린지.
             </p>
             <div className="hero-cta">
               <button
