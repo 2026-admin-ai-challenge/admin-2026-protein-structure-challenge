@@ -124,7 +124,7 @@ python inference.py --input sample_input/sample_features.csv --output sample_pre
 
 하위 의존성은 이미지에 포함될 수 있으나 참가자에게 직접 사용을 보장할 패키지와 구분합니다. 재현용 전체 설치 목록은 별도로 기록하되, 공식 지원 표기는 검증 근거가 있는 항목만 합니다. 서버는 인터넷 접속·패키지 설치·학습을 허용하지 않으며, 지원 목록에 없는 패키지를 제출 `requirements.txt`에 추가해도 설치되지 않습니다.
 
-**확정 전 체크사항:** [evaluator Dockerfile](../apps/evaluator/Dockerfile)과 [requirements](../apps/evaluator/requirements.txt)는 초안으로 표시되어 있습니다. `FROM python:3.12-slim`은 Python 패치 버전을 고정하지 않으므로 특정 패치 버전을 검증 없이 공지하면 안 됩니다. [검증 기록](validation.md)의 데모 격리 평가 성공은 현재 전체 패키지·실제 모델의 검증 완료 증거가 아닙니다. 이 문서는 패키지나 버전을 공식 지원값으로 새로 확정하지 않습니다.
+**확정 전 체크사항:** [evaluator Dockerfile](../apps/evaluator/Dockerfile)과 [requirements](../apps/evaluator/requirements.txt)는 초안으로 표시되어 있습니다. `FROM python:3.12.14-slim`으로 Python 패치 버전은 고정했지만, 이 이미지에서 지원 패키지·실제 모델 검증을 마치기 전에는 해당 버전을 공식 지원값으로 공지하면 안 됩니다. [검증 기록](validation.md)의 데모 격리 평가 성공은 현재 전체 패키지·실제 모델의 검증 완료 증거가 아닙니다. 이 문서는 패키지나 버전을 공식 지원값으로 새로 확정하지 않습니다.
 
 ## 6. 권장 다운로드: ZIP 두 개
 
