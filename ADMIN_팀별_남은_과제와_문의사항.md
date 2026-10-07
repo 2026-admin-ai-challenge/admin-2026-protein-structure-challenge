@@ -67,6 +67,20 @@
 3. **데이터 인계:** 데이터 팀이 생성·검증한 버전의 manifest와 파일 해시를 전달한다. 웹/API 팀은 그 버전만 읽기 전용으로 마운트하고 관리자 승인 후 공개한다.
 4. **점수 계약:** 전체 허용 클래스에 대한 Macro F1, Public/Private 분할, 팀 최고 Public 기록, 최종 제출물 선택 방식을 동일 문서·코드·화면에 적용한다.
 
+## 채점 시 패키지 설치 후속 작업
+
+2026-10-07 기준. 채점 이미지에는 기본 패키지만 설치해 두고, 제출 `requirements.txt`의 패키지는 데이터 팀 89개 목록(`runtime/requirements-competition.lock.txt`) 안에서만 채점 직전에 설치하도록 바꿨다(브랜치 `feat/install-submission-packages`). 목록에 없는 패키지는 접수 단계에서 거절하고, 버전은 적힌 것과 상관없이 목록의 버전을 설치한다. 아래는 이 변경에 이어서 할 일이다.
+
+- [ ] **웹/API** 브랜치를 push하고 PR을 연다.
+- [ ] **웹/API·운영** 채점 이미지를 새로 빌드해 `admin-evaluator:latest`로 교체한다(`docker build -t admin-evaluator:latest apps/evaluator`). 교체하지 않으면 worker가 "준비 안 됨: rebuild"를 표시하고 채점하지 않는다.
+- [ ] **웹/API** `fix/eval-input-check`를 머지할 때 `apps/api/app/evaluators/docker.py`의 `ready()`·`__init__` 충돌을 해결한다. `fix/evaluator-boosting-packages`의 내용(libgomp1, xgboost-cpu)은 이 브랜치에 들어 있으므로 확인 후 닫는다.
+- [ ] **데이터** 스타터킷·베이스라인 `requirements.txt`에서 목록 밖 패키지인 `jupyterlab`을 뺀다. 지금 그대로 제출하면 접수 단계에서 거절된다.
+- [ ] **데이터** `runtime/README.md`(규칙 2·3)와 `COMPETITION_PACKAGES.md`의 "제출마다 requirements.txt를 설치하지 않는다"는 문구를 새 방식에 맞게 고친다.
+- [ ] **운영·웹/API** GPU 서버에서 `pip freeze`로 만든 파일에는 `nvidia-*`, `triton`이 섞여 있어 접수 단계에서 거절된다. 이 둘만 무시할지 결정한다.
+- [ ] **운영** 목록과 다른 버전으로 저장한 모델은 목록 버전에서 열리지 않으면 채점 중 `runtime_error`로 실패하고 횟수가 차감된다. 공지에 "목록 버전으로 저장·검증"을 강조할지, 차감 예외를 둘지 정한다.
+- [ ] **데이터→웹/API** 89개 목록이 바뀌면 `apps/evaluator/requirements-competition.lock.txt` 사본을 갱신하고 채점 이미지와 api·worker를 다시 빌드한다.
+- [ ] **웹/API** (선택) 같은 패키지 조합의 설치 결과를 제출 간에 재사용(캐시)한다. 지금은 제출마다 새로 설치하며, 89개 전부 설치에 약 20초가 걸린다. 대기열이 길어지면 검토한다.
+
 ## 공동 문의사항·미결정 사항
 
 아래 항목은 **질문으로 남겨 둔다.** 이전 회의에서 1~3번·5번·6번으로 분류했던 서버 처리량, 제출 규약, 압축 안전 상한, 제출 차감 세칙, 리허설은 지금 수치를 임의로 정하지 않는다. 다만 담당 팀의 준비 작업에는 포함한다.
