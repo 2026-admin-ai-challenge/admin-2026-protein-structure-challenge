@@ -4,11 +4,14 @@ The container gets the unpacked submission and the hidden evaluation INPUT, both
 only, plus one writable output directory. It never receives labels, the Public/Private
 split, database credentials or the Docker socket, and it has no network.
 
-The image holds only base packages, plus wheels of the competition lock. When the
-submission's requirements.txt names packages (checked against the lock at upload), an
-install container first puts them into a fresh Docker volume, from those wheels and with
-the same restrictions. Inference then runs with that volume read only at /deps and its
-environment first on PATH. The volume is removed after the run.
+The image holds only base packages, plus wheels of the 89-package competition lock. When
+the submission's requirements.txt names packages, an install container first puts them
+into a fresh Docker volume: from those wheels without network, and only if something is
+missing there, again with network so pip can download it from PyPI. The install
+container sees neither the submission nor the evaluation input, and accepts only wheels,
+so no participant-chosen code runs while it has network. Inference then runs, still
+without network, with that volume read only at /deps and its environment first on PATH.
+The volume is removed after the run.
 
 PROVISIONAL contract (to be fixed with the data team, Q2):
     working directory /submission,
@@ -27,8 +30,7 @@ import time
 import uuid
 from pathlib import Path
 
-from .. import packages
-from ..config import INFERENCE_TIMEOUT_SECONDS, PACKAGE_LOCK, REPO_ROOT
+from ..config import INFERENCE_TIMEOUT_SECONDS, REPO_ROOT
 from ..errors import FAILURES
 from ..zipcheck import ZipRejected, inspect, safe_extract
 from .base import Evaluator, Outcome, failure
@@ -39,8 +41,10 @@ CPUS = os.getenv("EVAL_CPUS", "4")
 MEMORY = os.getenv("EVAL_MEMORY", "8g")
 PIDS = os.getenv("EVAL_PIDS", "256")
 TMPFS_SIZE = os.getenv("EVAL_TMPFS_SIZE", "1g")
-# Installing a submission's packages from local wheels. Not counted in the inference limit.
+# Installing a submission's packages, both passes together. Not counted in the inference limit.
 INSTALL_TIMEOUT_SECONDS = int(os.getenv("EVAL_INSTALL_TIMEOUT_SECONDS", "600"))
+# Docker volume keeping pip's downloads between online installs. Empty: no cache.
+PIP_CACHE_VOLUME = os.getenv("EVAL_PIP_CACHE_VOLUME", "admin-eval-pip-cache")
 # Where the worker unpacks submissions, and the same directory as the Docker HOST sees it.
 # They differ when the worker itself runs in a container and talks to the host daemon.
 WORK_DIR = Path(os.getenv("EVAL_WORK_DIR", str(REPO_ROOT / "var" / "eval-work")))
@@ -51,15 +55,21 @@ MAX_OUTPUT_BYTES = int(os.getenv("EVAL_MAX_OUTPUT_BYTES", str(5 * 1024 * 1024)))
 LOG_TAIL_BYTES = 16 * 1024
 KILL_GRACE_SECONDS = 15
 OUTPUT_NAME = "predictions.csv"
-# Paths inside the evaluation image (apps/evaluator/Dockerfile).
-IMAGE_LOCK = "/opt/eval/requirements-competition.lock.txt"
+# Paths inside the evaluation image (apps/evaluator/Dockerfile). An image built before the
+# installer existed would fail every install as the team's fault, so its label is checked.
 INSTALLER = "/opt/eval/install_packages.py"
-DEPS, VENV = "/deps", "/deps/venv"
+INSTALLER_LABEL = '{{index .Config.Labels "admin-eval.installer"}}'
+INSTALLER_VERSION = "1"
+DEPS, VENV, PIP_CACHE = "/deps", "/deps/venv", "/pip-cache"
 BASE_PATH = "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 # admin-eval-env-<unix time>-<submission>-<random>: the time lets abandoned volumes be found.
 VOLUME_PREFIX = "admin-eval-env-"
 VOLUME_TIME = re.compile(rf"^{VOLUME_PREFIX}(\d+)-")
-IMAGE_RECHECK_SECONDS = 30
+# pip output meaning PyPI could not be reached: the server's fault, not the team's.
+NETWORK_ERRORS = re.compile(r"NewConnectionError|Temporary failure in name resolution|Name or service not known"
+                            r"|Max retries exceeded|ConnectTimeoutError|ReadTimeoutError|SSLError|ProxyError")
+# pip's own error lines are shown to the team: the install container holds nothing secret.
+PIP_ERROR_CHARS = 600
 
 
 def _host_path(path: Path):
@@ -77,11 +87,11 @@ def _directory_size(path: Path):
     return total
 
 
-def _isolated(name):
+def _isolated(name, network="none"):
     """`docker run` with the restrictions every container of a submission gets."""
     return [
         "docker", "run", "--rm", "--name", name,
-        "--network", "none",
+        "--network", network,
         "--read-only",
         "--user", "65534:65534",
         "--cap-drop", "ALL",
@@ -114,14 +124,19 @@ def build_command(name, code_dir: Path, output_dir: Path, volume=None):
     ]
 
 
-def install_command(name, volume, pins):
-    """`pins` are `name==version` from the lock (app.packages), never text from the ZIP."""
+def install_command(name, volume, requirements, online=False, seconds=INSTALL_TIMEOUT_SECONDS):
+    """`requirements` were re-written by app.packages, never raw text from the ZIP. Only the
+    online pass gets network, and the shared pip cache with it."""
+    command = [*_isolated(name, "bridge" if online else "none"), "-v", f"{volume}:{DEPS}:rw"]
+    if online and PIP_CACHE_VOLUME:
+        command += ["-v", f"{PIP_CACHE_VOLUME}:{PIP_CACHE}:rw", "-e", f"PIP_CACHE_DIR={PIP_CACHE}"]
+    elif online:
+        command += ["-e", "PIP_NO_CACHE_DIR=1"]
     return [
-        *_isolated(name),
-        "-v", f"{volume}:{DEPS}:rw",
+        *command,
         IMAGE,
-        "timeout", "--signal=KILL", str(INSTALL_TIMEOUT_SECONDS + KILL_GRACE_SECONDS),
-        "python", INSTALLER, VENV, *pins,
+        "timeout", "--signal=KILL", str(int(seconds) + KILL_GRACE_SECONDS),
+        "python", INSTALLER, "online" if online else "offline", VENV, *requirements,
     ]
 
 
@@ -156,45 +171,18 @@ def prune_abandoned():
 class DockerEvaluator(Evaluator):
     name = "docker"
 
-    def __init__(self):
-        self._image_check = None  # (image ID, monotonic time, problem) of the last lock check
-
     def ready(self):
         if not INPUT_HOST_DIR:
             return False, "EVAL_INPUT_HOST_DIR is not set"
         try:
-            probe = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}", IMAGE], capture_output=True, timeout=20)
+            probe = subprocess.run(["docker", "image", "inspect", "--format", INSTALLER_LABEL, IMAGE], capture_output=True, timeout=20)
         except (OSError, subprocess.TimeoutExpired) as error:
             return False, f"docker is not reachable: {error}"
         if probe.returncode != 0:
             return False, f"evaluation image not found: {IMAGE}"
-        problem = self._lock_problem(probe.stdout.decode().strip())
-        if problem:
-            return False, problem
+        if probe.stdout.decode("utf-8", "replace").strip() != INSTALLER_VERSION:
+            return False, f"{IMAGE} has no package installer {INSTALLER_VERSION}: rebuild it from apps/evaluator"
         return True, f"docker evaluator: image {IMAGE}, {CPUS} cpus, {MEMORY} memory"
-
-    def _lock_problem(self, image_id):
-        """Uploads are checked against PACKAGE_LOCK, so the image must hold wheels of the same
-        list. Asked again when the image changes, and every 30 seconds while it differs."""
-        if self._image_check and self._image_check[0] == image_id:
-            _, checked_at, problem = self._image_check
-            if not problem or time.monotonic() - checked_at < IMAGE_RECHECK_SECONDS:
-                return problem
-        rebuild = f"rebuild {IMAGE} from apps/evaluator"
-        try:
-            result = subprocess.run([*_isolated(f"admin-eval-lock-{uuid.uuid4().hex[:8]}"), IMAGE, "cat", IMAGE_LOCK],
-                                    capture_output=True, timeout=60)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            problem = f"could not read the package list of {IMAGE}: {error}"
-        else:
-            if result.returncode != 0:
-                problem = f"{IMAGE} has no {IMAGE_LOCK}: {rebuild}"
-            elif packages.parse_lock(result.stdout.decode("utf-8", "replace")) != packages.lock():
-                problem = f"{IMAGE} was built from another package list than {PACKAGE_LOCK.name}: {rebuild}"
-            else:
-                problem = None
-        self._image_check = (image_id, time.monotonic(), problem)
-        return problem
 
     def run(self, submission, zip_path, tick):
         work = WORK_DIR / f"submission-{submission.id}-{uuid.uuid4().hex[:8]}"
@@ -203,20 +191,20 @@ class DockerEvaluator(Evaluator):
         prune_abandoned()
         try:
             try:
-                pins = inspect(zip_path)["packages"]
+                requirements = inspect(zip_path)["packages"]
                 safe_extract(zip_path, code_dir)
             except ZipRejected as error:
                 return failure("zip_invalid", str(error))
             output_dir.mkdir(parents=True)
             os.chmod(output_dir, 0o777)
-            if pins:
+            if requirements:
                 volume = f"{VOLUME_PREFIX}{int(time.time())}-{submission.id}-{work.name[-8:]}"
-                problem = self._install(f"{name}-install", volume, pins, tick)
+                problem, source = self._install(f"{name}-install", volume, requirements, tick)
                 if problem:
                     return problem
             outcome = self._execute(name, code_dir, output_dir, volume, tick)
-            if pins:
-                outcome.log = f"installed from requirements.txt: {' '.join(pins)}\n{outcome.log or ''}"
+            if requirements:
+                outcome.log = f"installed from requirements.txt ({source}): {' '.join(requirements)}\n{outcome.log or ''}"
             return outcome
         except OSError as error:
             return failure("system_error", log=f"worker I/O error: {error}")
@@ -225,17 +213,31 @@ class DockerEvaluator(Evaluator):
             if volume:
                 _remove_volume(volume)
 
-    def _install(self, name, volume, pins, tick):
-        """None, or the failure to report. The packages passed the lock check at upload, so a
-        failed install is the server's fault and never uses up the team's attempt."""
-        try:
-            code, log, stopped_for, _ = self._watch(name, install_command(name, volume, pins), INSTALL_TIMEOUT_SECONDS, tick)
-        except OSError as error:
-            return failure("system_error", log=f"could not start docker: {error}")
-        if stopped_for or code != 0:
-            reason = f"timed out after {INSTALL_TIMEOUT_SECONDS} s" if stopped_for else f"failed with exit code {code}"
-            return failure("system_error", log=f"package install {reason}: {' '.join(pins)}\n{log}")
-        return None
+    def _install(self, name, volume, requirements, tick):
+        """(failure to report or None, where the packages came from). The image's wheels are
+        tried first without network; PyPI only when something is missing there. A package
+        that cannot be installed is the team's failure; an unreachable PyPI, a timeout or a
+        docker error is the server's."""
+        started, logs = time.monotonic(), []
+        for online in (False, True):
+            source = "PyPI" if online else "image wheels"
+            seconds = INSTALL_TIMEOUT_SECONDS - (time.monotonic() - started)
+            pass_name = f"{name}-{'online' if online else 'offline'}"
+            try:
+                code, log, stopped_for, _ = self._watch(
+                    pass_name, install_command(pass_name, volume, requirements, online, seconds), seconds, tick)
+            except OSError as error:
+                return failure("system_error", log=f"could not start docker: {error}"), source
+            logs.append(f"--- install from {source}: exit code {code} ---\n{log}")
+            if code == 0:
+                return None, source
+            if stopped_for or code in (124, 125, 137) or (online and NETWORK_ERRORS.search(log)):
+                # 124/137: the container's own timer or the OOM killer, 125: docker itself failed.
+                reason = f"timed out after {INSTALL_TIMEOUT_SECONDS} s" if stopped_for else f"exit code {code}"
+                return failure("system_error", log=f"package install failed ({reason})\n" + "\n".join(logs)), source
+        errors = " ".join(line.strip() for line in log.splitlines() if line.startswith("ERROR:"))
+        message = f"{FAILURES['install_failed']} {errors[:PIP_ERROR_CHARS]}".strip()
+        return failure("install_failed", message, "\n".join(logs)), source
 
     def _watch(self, name, command, limit, tick, output_dir=None):
         """Runs a container while reporting liveness. Returns (exit code, log tail, why it was

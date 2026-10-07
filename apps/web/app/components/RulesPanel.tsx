@@ -18,8 +18,8 @@ export default function RulesPanel({ limits }: { limits: Limits | undefined }) {
       "03",
       "모델 ZIP 제출",
       limits
-        ? `추론 코드와 학습된 모델을 ZIP 하나로 제출합니다. ZIP은 최대 ${megabytes(limits.zip_bytes)}, 추론은 최대 ${minutes(limits.inference_seconds)}입니다. 채점 중에는 학습과 인터넷 접속을 할 수 없습니다. requirements.txt에는 대회 패키지 목록에 있는 패키지만 적을 수 있으며, 적은 패키지는 목록의 버전으로 추론 전에 설치합니다.`
-        : "추론 코드와 학습된 모델을 ZIP 하나로 제출합니다. 채점 중에는 학습과 인터넷 접속을 할 수 없습니다. requirements.txt에는 대회 패키지 목록에 있는 패키지만 적을 수 있으며, 적은 패키지는 목록의 버전으로 추론 전에 설치합니다.",
+        ? `추론 코드와 학습된 모델을 ZIP 하나로 제출합니다. ZIP은 최대 ${megabytes(limits.zip_bytes)}, 추론은 최대 ${minutes(limits.inference_seconds)}입니다. requirements.txt에 적은 패키지는 추론 전에 설치합니다. 추론 중에는 학습과 인터넷 접속을 할 수 없습니다.`
+        : "추론 코드와 학습된 모델을 ZIP 하나로 제출합니다. requirements.txt에 적은 패키지는 추론 전에 설치합니다. 추론 중에는 학습과 인터넷 접속을 할 수 없습니다.",
     ],
     [
       "04",

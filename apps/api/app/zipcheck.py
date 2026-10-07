@@ -35,8 +35,8 @@ def _is_directory(info):
 
 
 def _packages(path):
-    """The pins for the root requirements.txt (see app.packages). `inspect` has already
-    refused duplicate and unsafe names, so the normalized name finds one entry."""
+    """What the root requirements.txt asks to install (see app.packages). `inspect` has
+    already refused duplicate and unsafe names, so the normalized name finds one entry."""
     try:
         with zipfile.ZipFile(path) as archive:
             info = next(info for info in archive.infolist() if not _is_directory(info) and _normalize(info) == REQUIREMENTS)
@@ -45,13 +45,13 @@ def _packages(path):
     except (zipfile.BadZipFile, NotImplementedError, EOFError, OSError, RuntimeError, zlib.error):
         raise ZipRejected("requirements.txt의 압축을 풀 수 없습니다. ZIP을 다시 만들어 주세요.")
     try:
-        return packages.pins(packages.decode(data))
+        return packages.requirements(packages.decode(data))
     except packages.RequirementsRejected as error:
         raise ZipRejected(str(error))
 
 
 def inspect(path, required=ZIP_REQUIRED, max_entries=MAX_ZIP_ENTRIES, max_total=MAX_UNZIPPED_BYTES):
-    """Returns {"entries": n, "unpacked_bytes": total, "packages": [name==version, ...]} or
+    """Returns {"entries": n, "unpacked_bytes": total, "packages": ["numpy<3,>=2", ...]} or
     raises ZipRejected. `packages` is what the root requirements.txt asks to install."""
     try:
         with zipfile.ZipFile(path) as archive:
@@ -94,8 +94,8 @@ def inspect(path, required=ZIP_REQUIRED, max_entries=MAX_ZIP_ENTRIES, max_total=
             "ZIP 최상위에 필수 항목이 없습니다: " + ", ".join(missing)
             + ". 폴더째 압축하지 말고 파일과 model 폴더를 직접 선택해 압축하세요."
         )
-    pins = _packages(path) if REQUIREMENTS in files else []
-    return {"entries": len(infos), "unpacked_bytes": total, "packages": pins}
+    requirements = _packages(path) if REQUIREMENTS in files else []
+    return {"entries": len(infos), "unpacked_bytes": total, "packages": requirements}
 
 
 def safe_extract(path, destination, max_total=MAX_UNZIPPED_BYTES):

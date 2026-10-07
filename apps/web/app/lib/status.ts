@@ -11,8 +11,10 @@ export const STATUS_LABEL: Record<SubmissionStatus, string> = {
 export const FAILURE_HELP: Record<string, string> = {
   zip_invalid:
     "ZIP 구성을 확인하세요. 폴더째 압축하지 말고 필수 항목이 ZIP 최상위에 오도록 압축해야 합니다. 제출 횟수는 차감되지 않습니다.",
+  install_failed:
+    "requirements.txt의 패키지 이름과 버전을 확인하세요. PyPI에 Linux·Python 3.12용 wheel이 있는 패키지만 설치할 수 있습니다.",
   runtime_error:
-    "추론 코드가 오류로 끝났습니다. 같은 명령을 내 컴퓨터에서 먼저 실행해 보세요. 채점 중에는 인터넷과 패키지 설치를 쓸 수 없습니다.",
+    "추론 코드가 오류로 끝났습니다. 같은 명령을 내 컴퓨터에서 먼저 실행해 보세요. 필요한 패키지가 requirements.txt에 모두 있는지, 추론 중에 인터넷을 쓰지 않는지 확인하세요.",
   timeout:
     "추론이 제한 시간 안에 끝나지 않았습니다. 모델이나 전처리를 가볍게 줄여 보세요.",
   out_of_memory:

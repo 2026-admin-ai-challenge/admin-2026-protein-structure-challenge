@@ -31,11 +31,12 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 
 ## 실제 채점 (Docker 격리 평가기)
 
-1. 채점 이미지를 만듭니다. 기본 패키지(`apps/evaluator/requirements.txt`)는 설치하고, 데이터팀의 89개 고정 목록(`apps/evaluator/requirements-competition.lock.txt`)은 Linux용 wheel만 `/opt/wheels`에 받아 둡니다. 인터넷이 필요한 단계는 이 빌드뿐이며 수 GB를 받습니다.
+1. 채점 이미지를 만듭니다. 기본 패키지(`apps/evaluator/requirements.txt`)는 설치하고, 데이터팀의 89개 고정 목록(`apps/evaluator/requirements-competition.lock.txt`)은 Linux용 wheel만 `/opt/wheels`에 받아 둡니다. 빌드할 때 수 GB를 받습니다.
    ```bash
    docker build -t admin-evaluator:latest apps/evaluator
    ```
-   89개 목록은 데이터 저장소 `runtime/requirements-competition.lock.txt`의 사본입니다. 그쪽이 바뀌면 파일을 다시 복사하고 이미지를 새로 빌드한 뒤 api·worker도 다시 빌드합니다(`--build`). 접수 검사(api)와 이미지의 목록이 다르면 worker가 "준비 안 됨: rebuild …"로 표시하고 채점을 멈춥니다.
+   89개 목록은 데이터 저장소 `runtime/requirements-competition.lock.txt`의 사본입니다. 그쪽이 바뀌면 파일을 다시 복사하고 이미지를 새로 빌드합니다. 사본이 낡아도 채점은 되지만, 빠진 패키지는 매번 PyPI에서 받습니다.
+   채점 컴퓨터는 **PyPI(`pypi.org`, `files.pythonhosted.org`)와 `download.pytorch.org`에 접속할 수 있어야** 합니다. 목록 밖 패키지를 요구하는 제출만 이 접속을 씁니다.
 2. `.env`에 호스트 경로를 적습니다.
    ```bash
    DATA_HOST_DIR=/srv/admin-data            # public/, private/ 가 있는 데이터 디렉터리
@@ -54,7 +55,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 
 참가자 컨테이너는 `--network none`, 읽기 전용 루트, 사용자 65534, 모든 capability 제거, `no-new-privileges`, 프로세스·CPU·메모리 제한, `/tmp`만 쓰기 가능으로 실행합니다. 마운트는 제출 내용(읽기 전용), 평가 입력(읽기 전용), 출력 디렉터리 하나, 그리고 `requirements.txt`가 패키지를 요구한 경우 패키지 볼륨(읽기 전용)뿐입니다. 10분을 넘으면 worker가 강제 종료하고, worker가 죽어도 컨테이너 안의 타이머가 종료시킵니다. 출력 디렉터리가 5 MB를 넘어도 종료합니다.
 
-패키지 설치 컨테이너도 같은 제한으로 실행하며, 마운트는 그 제출의 패키지 볼륨(`admin-eval-env-<시각>-<제출>-<난수>`) 하나뿐입니다. 제출 내용과 평가 입력은 보지 않고, worker가 lock에서 만든 `이름==버전`만 인자로 받아 이미지 안의 wheel로 설치합니다. 볼륨은 채점이 끝나면 지우고, worker가 죽어 남은 볼륨은 다음 채점 때 정리합니다(`docker volume ls --filter name=admin-eval-env-`로 확인).
+패키지 설치 컨테이너도 같은 제한으로 실행하며, 마운트는 그 제출의 패키지 볼륨(`admin-eval-env-<시각>-<제출>-<난수>`)뿐입니다. 제출 내용과 평가 입력은 보지 않고, worker가 `requirements.txt`를 해석해 다시 쓴 요구사항만 인자로 받습니다. 먼저 `--network none`으로 이미지 안의 wheel만 써서 설치하고, 실패할 때만 기본 bridge 네트워크로 다시 실행해 PyPI에서 받습니다(이때만 공유 캐시 볼륨 `admin-eval-pip-cache`도 붙음). wheel만 받으므로 네트워크가 열린 동안 실행되는 것은 pip뿐입니다. 받은 패키지의 코드는 네트워크 없는 추론 컨테이너에서만 실행됩니다. 패키지 볼륨은 채점이 끝나면 지우고, worker가 죽어 남은 볼륨은 다음 채점 때 정리합니다(`docker volume ls --filter name=admin-eval-env-`로 확인). 캐시가 커지면 대회 중이 아닐 때 `docker volume rm admin-eval-pip-cache`로 지웁니다.
 
 **주의:** worker는 Docker 소켓을 쓰므로 호스트의 root와 같은 권한을 가집니다. worker 컨테이너에는 운영진 코드만 들어가며, 참가자 코드는 worker가 띄우는 별도 컨테이너에서만 실행됩니다. 채점 컴퓨터는 Linux를 권장합니다.
 
@@ -80,7 +81,8 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 | `MAX_UNZIPPED_BYTES` | 2147483648 | **임시**. 운영진 결정 후 변경 |
 | `MAX_ZIP_ENTRIES` | 2000 | **임시** |
 | `ZIP_REQUIRED` | `inference.py,train.py,requirements.txt,model/` | **임시**. 데이터팀과 확정 |
-| `EVAL_INSTALL_TIMEOUT_SECONDS` | 600 | 제출 패키지 설치 제한. 추론 시간과 따로 셈 |
+| `EVAL_INSTALL_TIMEOUT_SECONDS` | 600 | 제출 패키지 설치 제한(오프라인·온라인 합계). 추론 시간과 따로 셈 |
+| `EVAL_PIP_CACHE_VOLUME` | `admin-eval-pip-cache` | PyPI에서 받은 파일의 공유 캐시 볼륨. 빈 값이면 캐시 안 함 |
 | `EVALUATOR` | `mock` | compose 파일이 정함. `.env`로 바꾸지 않음 |
 
 제출 ZIP 저장 공간은 최악의 경우 `팀 수 × 10 × 500 MB`입니다. 30팀이면 150 GB입니다.

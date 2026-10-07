@@ -94,9 +94,9 @@
 | 업로드가 중간에 끊김 | 프록시 본문 한도·시간 제한, 디스크 여유 | 한도 상향, `df -h` |
 | 제출이 계속 대기 중 | 작업자 상태와 사유 | 이미지·정답·평가 입력 경로 확인, worker 재시작 |
 | 전부 `system_error` | worker 로그 | 원인 해결 후 "다시 채점" |
-| 전부 `runtime_error` | 한 건의 "로그" | 맨 윗줄 `installed from requirements.txt:`와 import 오류. 기본 패키지·89개 목록에 없는 의존성인지 확인 |
-| 패키지 설치 `system_error` | 로그의 `package install failed`와 pip 출력 | 이미지의 wheel 누락이면 이미지 재빌드 후 "다시 채점" |
-| 작업자 "준비 안 됨: rebuild" | lock 사본과 이미지 목록 불일치 | `docker build -t admin-evaluator:latest apps/evaluator` |
+| 전부 `runtime_error` | 한 건의 "로그" | 맨 윗줄 `installed from requirements.txt (…)`와 import 오류. `requirements.txt`에 빠진 패키지인지 확인 |
+| 패키지 설치 `system_error` | 로그의 `package install failed`와 pip 출력 | PyPI 접속(방화벽·DNS), 설치 시간 초과면 `EVAL_INSTALL_TIMEOUT_SECONDS`. 해결 후 "다시 채점" |
+| 설치가 매번 PyPI에서 받음 | 로그 맨 윗줄의 `(PyPI)` | 89개 목록 사본·이미지가 낡았는지 확인 후 이미지 재빌드 |
 | 순위가 안 바뀜 | 동결 여부, mock/docker 평가기 일치 | 동결 해제, "Rebuild leaderboard" |
 
 ## 대회 전 리허설 기록

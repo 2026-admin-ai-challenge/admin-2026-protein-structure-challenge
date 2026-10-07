@@ -1,57 +1,39 @@
 """What a submission's requirements.txt may ask for.
 
-The scoring image installs only the base packages of apps/evaluator/requirements.txt and
-keeps wheels of the 89 packages the data team pinned (`PACKAGE_LOCK`). Before inference the
-worker installs the packages a submission names. Every one must be in the lock, otherwise
-the ZIP is refused at upload. Version specifiers are ignored: the image has one version of
-each package, so what gets installed is always `name==version` from the lock, never text
-from the file.
+The scoring image holds only the base packages of apps/evaluator/requirements.txt. Before
+inference the worker downloads what a submission's requirements.txt lists from PyPI, as
+wheels, into an environment of its own. The file is checked when the ZIP is received:
+lines that would make pip fetch something other than an index package (other files,
+paths, URLs, editable installs) are refused. What reaches pip is each requirement as
+`packaging` re-writes it, never raw text from the file.
 """
 import codecs
 import re
-from functools import lru_cache
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
-from packaging.version import Version
-
-from .config import PACKAGE_LOCK
 
 MAX_BYTES = 64 * 1024
+# The requirements travel as command-line arguments of the install container.
+MAX_REQUIREMENTS = 300
 # Environment markers (`; sys_platform == "win32"`) are judged for the scoring container,
 # not for the machine the worker runs on. A requirement whose marker is false is skipped,
 # as pip would.
 TARGET = {"os_name": "posix", "sys_platform": "linux", "platform_system": "Linux", "platform_machine": "x86_64",
           "platform_python_implementation": "CPython", "implementation_name": "cpython", "python_version": "3.12"}
-# Options that only choose where pip looks. The image installs from its own wheels, so they
-# are ignored. Any other option is refused.
+# Options that only choose where pip looks. The install container uses PyPI and the
+# PyTorch CPU index, so they are ignored. Any other option is refused.
 IGNORED_OPTIONS = {"-i", "--index-url", "--extra-index-url", "--no-index", "-f", "--find-links",
                    "--trusted-host", "--pre", "--prefer-binary", "--only-binary", "--no-binary"}
 INCLUDES = {"-r", "--requirement", "-c", "--constraint", "-e", "--editable"}
 COMMENT = re.compile(r"(^|\s+)#.*$")
 # pip-compile --generate-hashes writes these after a requirement.
 HASH = re.compile(r"\s+--hash[=\s]\S+")
-SHOWN = 10
 
 
 class RequirementsRejected(ValueError):
     pass
-
-
-def parse_lock(text):
-    """{canonical name: (name as written, Version)} from `name==version` lines."""
-    pinned = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            name, _, version = line.partition("==")
-            pinned[canonicalize_name(name)] = (name.strip(), Version(version))
-    return pinned
-
-
-@lru_cache(maxsize=1)
-def lock():
-    return parse_lock(PACKAGE_LOCK.read_text(encoding="utf-8"))
 
 
 def decode(data):
@@ -85,18 +67,17 @@ def _lines(text):
         yield first, line
 
 
-def _listed(items):
-    items = [item[:60] for item in dict.fromkeys(items)]
-    more = f" 외 {len(items) - SHOWN}개" if len(items) > SHOWN else ""
-    return ", ".join(items[:SHOWN]) + more
+def _without_local(specifier):
+    """`torch==2.14.1+cu128` from a GPU machine's freeze names a CUDA build the scoring
+    container cannot use; the same release's CPU build is installed instead."""
+    return SpecifierSet(",".join(f"{item.operator}{item.version.split('+')[0]}" for item in specifier))
 
 
-def pins(text, pinned=None):
-    """The packages to install for a requirements.txt: sorted `name==version` from the lock,
-    whatever version the file asks for. Raises RequirementsRejected naming every package
-    that is not in the lock."""
-    pinned = lock() if pinned is None else pinned
-    wanted, unknown = {}, []
+def requirements(text):
+    """The requirements to install, as sorted pip arguments like `numpy<3,>=2` or
+    `transformers[torch]==5.18.0`. Lines naming the same package are merged. Raises
+    RequirementsRejected for a line pip would fetch from somewhere other than an index."""
+    merged = {}
     for number, line in _lines(text):
         where = f"requirements.txt {number}번째 줄"
         if line.startswith("-"):
@@ -117,16 +98,10 @@ def pins(text, pinned=None):
         if requirement.url:
             raise RequirementsRejected(f"{where}: 파일 경로나 URL로 지정한 패키지는 설치할 수 없습니다 ({requirement.name[:60]}). "
                                        "conda 환경이라면 pip list --format=freeze로 다시 만들어 주세요.")
-        if requirement.extras:
-            raise RequirementsRejected(f"{where}: extras({requirement.name[:60]}[{','.join(sorted(requirement.extras))[:60]}])는 "
-                                       "쓸 수 없습니다. 필요한 패키지를 한 줄에 하나씩 적어 주세요.")
         key = canonicalize_name(requirement.name)
-        if key not in pinned:
-            unknown.append(requirement.name)
-            continue
-        name, version = pinned[key]
-        wanted[key] = f"{name}=={version}"
-    if unknown:
-        raise RequirementsRejected("requirements.txt에 채점 환경에서 제공하지 않는 패키지가 있습니다: " + _listed(unknown)
-                                   + ". 공지된 패키지 목록에 있는 패키지만 적어 주세요.")
-    return sorted(wanted.values(), key=str.lower)
+        name, extras, specifier = merged.get(key, (requirement.name, set(), SpecifierSet()))
+        merged[key] = (name, extras | requirement.extras, specifier & _without_local(requirement.specifier))
+    if len(merged) > MAX_REQUIREMENTS:
+        raise RequirementsRejected(f"requirements.txt의 패키지가 너무 많습니다: {len(merged)}개 (최대 {MAX_REQUIREMENTS}개)")
+    return [name + (f"[{','.join(sorted(extras))}]" if extras else "") + str(specifier)
+            for name, extras, specifier in sorted(merged.values(), key=lambda item: item[0].lower())]

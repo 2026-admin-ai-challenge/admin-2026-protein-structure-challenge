@@ -1,7 +1,7 @@
 # Base packages installed in the scoring image and available to every submission, whatever
 # its requirements.txt says. Each must appear with the same version in
 # requirements-competition.lock.txt: the image installs them from the wheels of that list.
-# Other packages of the list are installed per submission (see install_packages.py).
+# Anything else a submission lists is installed per submission (see install_packages.py).
 numpy==2.5.3
 pandas==3.0.6
 scipy==1.18.1

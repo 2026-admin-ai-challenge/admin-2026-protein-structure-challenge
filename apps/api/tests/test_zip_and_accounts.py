@@ -32,7 +32,7 @@ def raw_zip(entries):
 
 def test_valid_zip_is_measured(tmp_path):
     report = zipcheck.inspect(write(tmp_path, make_zip({**VALID, "model/sub/extra.bin": b"12345"})))
-    assert report == {"entries": 5, "unpacked_bytes": 3 + 6 + 5, "packages": ["numpy==2.5.3"]}
+    assert report == {"entries": 5, "unpacked_bytes": 3 + 6 + 5, "packages": ["numpy"]}
 
 
 @pytest.mark.parametrize("files", [
