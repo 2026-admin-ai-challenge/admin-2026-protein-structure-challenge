@@ -63,6 +63,10 @@ WORKER_STALE_SECONDS = _int("WORKER_STALE_SECONDS", 120)
 # Prediction file contract shared with the data team (copied from admin-2026-protein-data).
 PREDICTION_CONTRACT = Path(__file__).resolve().parents[1] / "contract" / "prediction_contract.json"
 
+# The only packages a submission's requirements.txt may name, with their versions (copied from
+# admin-2026-protein-data/runtime). The evaluation image holds wheels of exactly this list.
+PACKAGE_LOCK = Path(os.getenv("PACKAGE_LOCK", str(REPO_ROOT / "apps" / "evaluator" / "requirements-competition.lock.txt")))
+
 # "mock" produces fake scores for development. "docker" runs the real isolated inference.
 EVALUATOR = os.getenv("EVALUATOR", "mock").lower()
 if EVALUATOR not in {"mock", "docker"}:

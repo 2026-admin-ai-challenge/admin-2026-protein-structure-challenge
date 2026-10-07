@@ -189,13 +189,14 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 code.zip
 ├── inference.py        필수
 ├── train.py            필수. 채점 때 실행하지 않음
-├── requirements.txt    필수. 사용 패키지 명세일 뿐, 채점 중 설치하지 않음
+├── requirements.txt    필수. 추론 전에 설치할 패키지 (대회 패키지 목록 안에서만)
 └── model/              필수. 학습된 가중치와 전처리 객체
 ```
 
 - 필수 항목은 **ZIP 최상위**에 있어야 합니다. 목록은 환경변수 `ZIP_REQUIRED`.
 - 압축 ZIP 최대 500 MB(`MAX_ZIP_BYTES`, 확정). 해제 후 합계 2 GiB, 항목 2,000개(`MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, 임시).
 - 거절: 절대 경로, `..`, 심볼릭 링크·특수 파일, 같은 경로 중복, 암호화.
+- `requirements.txt` 검사(`app/packages.py`): 모든 패키지가 `PACKAGE_LOCK`(`apps/evaluator/requirements-competition.lock.txt`, 데이터팀 `runtime/`의 89개 고정 목록 사본)에 있어야 합니다. 아니면 `422 zip_invalid`로 거절하며 메시지에 해당 패키지를 모두 적습니다. 버전 지정은 보지 않고 항상 목록의 버전을 설치합니다(`filelock==4.0.10` → 4.0.9, `numpy<2` → 2.5.3). `-r`·`-c`·`-e`, 경로·URL, extras도 거절합니다. 인덱스 옵션과 `--hash`는 무시하고, Linux 컨테이너에 해당하지 않는 환경 표시(`; sys_platform == "win32"`) 줄은 건너뜁니다. 최대 64 KB, UTF-8 또는 UTF-16(BOM).
 
 ## 추론 실행 계약 `(임시, 데이터/평가팀과 확정 필요)`
 
@@ -214,6 +215,7 @@ code.zip
 `--input`은 데이터팀 베이스라인과 같이 **특징 CSV 파일 경로**입니다. 서열이나 구조를 쓰는 모델은 같은 폴더(`Path(args.input).parent`)의 `test.csv`, `test_structures.zip`을 읽습니다. 서버의 `EVAL_INPUT_HOST_DIR`에는 이 세 파일만 둔 별도 폴더를 지정하고, 정답이 들어 있는 `data/private`를 그대로 연결하지 않습니다.
 
 - 네트워크 없음, 읽기 전용 루트, 일반 사용자(65534), CPU·메모리·프로세스 수 제한, `/tmp`만 쓰기 가능.
+- 이미지에는 기본 패키지(`apps/evaluator/requirements.txt`)만 설치되어 있습니다. `requirements.txt`가 패키지를 요구하면, 같은 제한을 건 설치 컨테이너가 이미지 안의 wheel(`/opt/wheels`)로 제출 전용 Docker 볼륨에 가상환경을 만듭니다. 추론 컨테이너는 그 볼륨을 `/deps`에 읽기 전용으로 받고 `/deps/venv/bin`이 PATH 맨 앞이라 `python`이 그 환경을 씁니다. 설치 시간(`EVAL_INSTALL_TIMEOUT_SECONDS`, 기본 600초)은 추론 제한과 따로 셉니다. 설치 실패는 접수 때 검사를 통과한 목록에서 생긴 서버 문제이므로 `system_error`(차감 없음)입니다. 볼륨은 채점이 끝나면 지웁니다.
 - 정답, Public/Private 분할표, DB 정보, Docker 소켓은 컨테이너에 주지 않습니다. 정답 비교는 컨테이너 밖 worker가 합니다.
 - 명령은 환경변수 `EVAL_COMMAND`, 이미지는 `EVAL_IMAGE`, 자원은 `EVAL_CPUS`·`EVAL_MEMORY`·`EVAL_PIDS`로 바꿉니다.
 
@@ -221,6 +223,6 @@ code.zip
 
 1. `/input` 아래 파일 이름과 스키마(서열 CSV, 특징 CSV, 구조 NPZ의 배치).
 2. 진입점 형태: 위의 `--input/--output` 인자 방식으로 고정해도 되는가.
-3. 고정 채점 이미지에 넣을 패키지와 버전(`apps/evaluator/requirements.txt` 초안).
+3. 채점 이미지의 기본 패키지(`apps/evaluator/requirements.txt`)와 참가자가 고를 수 있는 89개 목록(`runtime/requirements-competition.lock.txt`). 목록을 바꾸면 사본과 이미지를 함께 갱신합니다.
 4. `metadata.json`에 `version`과 `validation`(검증 통과 여부)을 넣어 줄 수 있는가. 관리자 데이터 화면이 이 값을 읽습니다.
 5. 작은 공개 예제 입출력 파일의 이름. 지금은 `example_io.zip`으로 가정했습니다.

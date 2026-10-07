@@ -248,8 +248,9 @@ export default function SubmissionPanel({
               </pre>
               <p>
                 train.py는 채점 때 실행하지 않지만 반드시 함께 넣어야 합니다.
-                채점 중에는 인터넷과 패키지 설치를 쓸 수 없습니다.
-                requirements.txt는 사용한 패키지를 알리는 용도입니다.
+                채점 중에는 인터넷을 쓸 수 없습니다. requirements.txt에 적은
+                패키지는 추론 전에 대회 패키지 목록의 버전으로 설치합니다.
+                목록에 없는 패키지가 있으면 접수되지 않습니다.
               </p>
               <div className="quota">
                 <span>팀 제출 횟수 (대회 전체)</span>

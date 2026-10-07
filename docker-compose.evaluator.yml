@@ -24,6 +24,7 @@ services:
       EVAL_MEMORY: ${EVAL_MEMORY:-8g}
       EVAL_PIDS: ${EVAL_PIDS:-256}
       EVAL_TMPFS_SIZE: ${EVAL_TMPFS_SIZE:-1g}
+      EVAL_INSTALL_TIMEOUT_SECONDS: ${EVAL_INSTALL_TIMEOUT_SECONDS:-600}
       EVAL_WORK_DIR: /srv/eval-work
       EVAL_WORK_HOST_DIR: ${EVAL_WORK_HOST_DIR:?set EVAL_WORK_HOST_DIR to an empty host directory}
       EVAL_INPUT_HOST_DIR: ${EVAL_INPUT_HOST_DIR:?set EVAL_INPUT_HOST_DIR to the hidden evaluation input directory}

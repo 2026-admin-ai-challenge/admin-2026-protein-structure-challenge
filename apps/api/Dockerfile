@@ -4,6 +4,8 @@ WORKDIR /srv
 COPY apps/api/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY apps/api /srv/apps/api
+# The package lock uploads are checked against (PACKAGE_LOCK), shared with the evaluation image.
+COPY apps/evaluator/requirements-competition.lock.txt /srv/apps/evaluator/requirements-competition.lock.txt
 COPY scripts /srv/scripts
 RUN useradd --create-home --uid 10001 challenge \
     && mkdir -p /srv/data /srv/submissions /srv/eval-work \
