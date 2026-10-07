@@ -4,7 +4,7 @@
 // apps/api/app/config.py reads the same variable and must keep the same default.
 const DEFAULT_LAUNCH = "2026-11-01T13:00:00+09:00";
 // Sign-up Google Form linked from the countdown. APPLY_URL overrides it; empty hides the button.
-const DEFAULT_APPLY_URL = "";
+const DEFAULT_APPLY_URL = "https://forms.gle/3ij8v9Rp1Bphj6wN9";
 
 export function launchAt() {
   const time = Date.parse(process.env.LAUNCH_AT || DEFAULT_LAUNCH);
