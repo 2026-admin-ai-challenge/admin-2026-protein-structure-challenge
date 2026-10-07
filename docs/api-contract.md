@@ -78,7 +78,7 @@
 ```json
 {
   "settings": {"is_open": true, "start_time": "2026-10-24T00:00:00Z", "end_time": "2026-10-24T09:00:00Z",
-               "team_submission_limit": 10, "frozen": false, "finalized": false},
+               "team_submission_limit": 20, "frozen": false, "finalized": false},
   "submission_open": true,
   "dataset_available": true,
   "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21545, "bytes": 0}}},

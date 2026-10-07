@@ -41,10 +41,10 @@ LAUNCH_AT = _launch_at()
 # Uploaded ZIPs live outside every web-served path and outside the read-only data mount.
 SUBMISSION_DIR = Path(os.getenv("SUBMISSION_DIR", str(REPO_ROOT / "var" / "submissions")))
 
-# Confirmed by organizers: compressed ZIP 500 MB, inference 10 minutes, 10 submissions per team.
+# Confirmed by organizers: compressed ZIP 500 MB, inference 10 minutes, 20 submissions per team.
 MAX_ZIP_BYTES = _int("MAX_ZIP_BYTES", 500 * 1024 * 1024)
 INFERENCE_TIMEOUT_SECONDS = _int("INFERENCE_TIMEOUT_SECONDS", 600)
-DEFAULT_TEAM_SUBMISSION_LIMIT = _int("TEAM_SUBMISSION_LIMIT", 10)
+DEFAULT_TEAM_SUBMISSION_LIMIT = _int("TEAM_SUBMISSION_LIMIT", 20)
 
 # PROVISIONAL (Q3): organizers have not fixed the unpacked limits. Change via environment only.
 MAX_UNZIPPED_BYTES = _int("MAX_UNZIPPED_BYTES", 2 * 1024**3)
