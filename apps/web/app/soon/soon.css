@@ -377,6 +377,8 @@ svg {
   box-shadow: 0 0 0 3px #a997ef33;
 }
 .soon-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   padding: 10px 12px;
   border-radius: 10px;
   background: #3a2028;

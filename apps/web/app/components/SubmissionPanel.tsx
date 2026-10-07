@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ArrowRight, ArrowUpRight, Lock, Upload } from "lucide-react";
 import { ApiError, api, uploadZip } from "../lib/api";
-import { FAILURE_HELP, isPending } from "../lib/status";
+import { isPending } from "../lib/status";
+import SubmissionFailure from "./SubmissionFailure";
 import { date, fileSize, megabytes, minutes } from "../format";
 import type {
   Competition,
@@ -54,7 +55,11 @@ export default function SubmissionPanel({
       previous.current = data.entries;
       setHistory(data.entries);
       if (finished) onScored();
-      setQuota({ used: data.used, limit: data.limit, remaining: data.remaining });
+      setQuota({
+        used: data.used,
+        limit: data.limit,
+        remaining: data.remaining,
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -255,7 +260,10 @@ export default function SubmissionPanel({
                 <span>팀 제출 횟수 (대회 전체)</span>
                 <b>
                   {quota ? quota.used : "—"}
-                  <small> / {quota?.limit ?? limits?.team_submissions ?? "—"}</small>
+                  <small>
+                    {" "}
+                    / {quota?.limit ?? limits?.team_submissions ?? "—"}
+                  </small>
                 </b>
               </div>
               <p className="muted">
@@ -301,38 +309,40 @@ export default function SubmissionPanel({
               </thead>
               <tbody>
                 {history.map((s) => (
-                  <tr key={s.id}>
-                    <td>#{s.id}</td>
-                    <td>
-                      <strong>{s.filename}</strong>
-                      <small className="row-error muted">
-                        {fileSize(s.size_bytes)}
-                        {s.submitted_by ? " · " + s.submitted_by : ""}
-                      </small>
-                    </td>
-                    <td>
-                      <StatusPill status={s.status} />
-                      {s.status === "queued" && s.queue_position && (
+                  <Fragment key={s.id}>
+                    <tr>
+                      <td>#{s.id}</td>
+                      <td>
+                        <strong>{s.filename}</strong>
                         <small className="row-error muted">
-                          대기 순서 {s.queue_position}번째
+                          {fileSize(s.size_bytes)}
+                          {s.submitted_by ? " · " + s.submitted_by : ""}
                         </small>
-                      )}
-                      {s.status === "failed" && (
-                        <small className="row-error">
-                          {s.failure_code ? `[오류 코드: ${s.failure_code}] ` : ""}
-                          {s.error_message}
-                          {s.failure_code && FAILURE_HELP[s.failure_code]
-                            ? " " + FAILURE_HELP[s.failure_code]
-                            : ""}
-                          {s.counted ? "" : " (횟수 차감 없음)"}
-                        </small>
-                      )}
-                    </td>
-                    <td className="score">
-                      {s.public_score?.toFixed(5) ?? "—"}
-                    </td>
-                    <td>{date(s.created_at)}</td>
-                  </tr>
+                      </td>
+                      <td>
+                        <StatusPill status={s.status} />
+                        {s.status === "queued" && s.queue_position && (
+                          <small className="row-error muted">
+                            대기 순서 {s.queue_position}번째
+                          </small>
+                        )}
+                      </td>
+                      <td className="score">
+                        {s.public_score?.toFixed(5) ?? "—"}
+                      </td>
+                      <td>{date(s.created_at)}</td>
+                    </tr>
+                    {s.status === "failed" && (
+                      <tr className="submission-failure-row">
+                        <td colSpan={5}>
+                          <SubmissionFailure
+                            submission={s}
+                            admin={user.role === "ADMIN"}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

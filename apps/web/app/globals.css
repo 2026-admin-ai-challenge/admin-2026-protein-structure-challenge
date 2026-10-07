@@ -1348,7 +1348,8 @@ pre {
 }
 .row-error {
   display: block;
-  white-space: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-width: 400px;
   color: #af7575;
   font-size: 12px;
@@ -1356,6 +1357,39 @@ pre {
 }
 .row-error.muted {
   color: var(--muted);
+}
+.submission-failure {
+  padding: 18px 20px;
+  background: var(--card);
+  border: 1px solid #d8a7a7;
+  border-radius: 8px;
+  color: var(--ink);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.submission-failure p {
+  margin: 10px 0;
+}
+.submission-failure .failure-explanation {
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
+.submission-failure small {
+  display: block;
+  color: var(--muted);
+}
+.submission-failure details {
+  margin-top: 16px;
+}
+.submission-failure summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.submission-failure .log-tail {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .status-pill {
   padding: 4px 8px;
@@ -1424,6 +1458,8 @@ input {
   font-size: 15px;
 }
 .alert.error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: #fff1f1;
   color: #ac5656;
   border: 1px solid #f0d1d1;
@@ -2113,7 +2149,9 @@ input {
   background: linear-gradient(135deg, var(--lead-from), var(--lead-to));
   color: #ffffffc7;
   box-shadow: 0 14px 36px #45378f2e;
-  transition: transform 160ms, box-shadow 160ms;
+  transition:
+    transform 160ms,
+    box-shadow 160ms;
 }
 .footer-contributor.footer-lead:hover {
   transform: translateY(-2px);
