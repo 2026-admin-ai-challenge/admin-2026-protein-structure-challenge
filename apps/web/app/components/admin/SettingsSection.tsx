@@ -165,7 +165,7 @@ export default function SettingsSection({ onChanged }: { onChanged: () => void }
             </button>
           </form>
           <p className="muted">
-            서버 장애로 실패한 제출은 설정과 무관하게 차감되지 않습니다. ZIP{" "}
+            서버 장애와 ZIP 규격 위반으로 실패한 제출은 설정과 무관하게 차감되지 않습니다. ZIP{" "}
             {Math.round(data.limits.zip_bytes / (1024 * 1024))} MB, 추론{" "}
             {data.limits.inference_seconds}초 제한은 서버 환경변수로 정합니다.
           </p>

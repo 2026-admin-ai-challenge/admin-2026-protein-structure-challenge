@@ -13,6 +13,9 @@ FAILURES = {
 }
 # Server-side faults never use up one of the team's attempts.
 SYSTEM_FAILURES = {"system_error"}
+# Failures that never use up an attempt, whatever `count_failed` says: server faults and
+# ZIP format violations found by the worker's deep check (like rejections at upload time).
+UNCOUNTED_FAILURES = SYSTEM_FAILURES | {"zip_invalid"}
 
 
 class ApiError(HTTPException):

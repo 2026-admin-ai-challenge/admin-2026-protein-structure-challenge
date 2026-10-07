@@ -21,7 +21,7 @@ from sqlalchemy import select, update
 from . import storage
 from .config import EVALUATOR, WORKER_STALE_SECONDS as STALE_SECONDS
 from .db import SessionLocal
-from .errors import FAILURES, SYSTEM_FAILURES
+from .errors import FAILURES, UNCOUNTED_FAILURES
 from .evaluators import get_evaluator
 from .evaluators.base import failure
 from .leaderboard import rebuild
@@ -115,7 +115,7 @@ def finish(db, submission_id, worker_id, outcome, evaluator_name):
         row.status, row.failure_code = "failed", outcome.failure_code
         row.error_message = outcome.message or FAILURES.get(outcome.failure_code, FAILURES["system_error"])
         row.public_score = row.private_score = row.predictions = None
-        if outcome.failure_code in SYSTEM_FAILURES or not settings.count_failed:
+        if outcome.failure_code in UNCOUNTED_FAILURES or not settings.count_failed:
             row.counted = False
     db.commit()
     return row
