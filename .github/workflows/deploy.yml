@@ -1,0 +1,81 @@
+name: Deploy
+# Builds the three images here and tells the server to pull them. The server has one
+# OCPU, where building the web image takes about half an hour; pulling takes a minute.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: api
+            dockerfile: apps/api/Dockerfile
+            target: api
+          - name: worker
+            dockerfile: apps/api/Dockerfile
+            target: worker
+          - name: web
+            dockerfile: apps/web/Dockerfile
+            target: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/${{ matrix.name }}:latest
+            ghcr.io/${{ github.repository }}/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send the new images to the server
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh_opts="-i $HOME/.ssh/deploy_key -o BatchMode=yes"
+          root=admin-2026-protein-structure-challenge
+          # Config the server reads from disk rather than from an image.
+          scp $ssh_opts docker-compose.yml docker-compose.ghcr.yml "ubuntu@$DEPLOY_HOST:~/$root/"
+          scp $ssh_opts deploy/nginx.conf "ubuntu@$DEPLOY_HOST:~/$root/deploy/"
+          ssh $ssh_opts "ubuntu@$DEPLOY_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd ~/admin-2026-protein-structure-challenge
+          compose="docker compose -f docker-compose.yml -f docker-compose.ghcr.yml"
+          $compose pull
+          $compose up -d
+          # One OCPU and 50 GB: old layers add up fast.
+          docker image prune -f
+          $compose ps
+          REMOTE
