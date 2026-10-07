@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app import storage
-from app.models import AuditLog, Settings, Submission, User, now
+from app.models import AuditLog, Competition, Settings, Submission, User, now
 from conftest import add_account, login, make_zip, upload
 
 PARTICIPANT_PATHS = ["/api/competition", "/api/submissions/me", "/api/leaderboard"]
@@ -204,6 +204,12 @@ def test_metadata_does_not_describe_hidden_files(client, db):
     assert "train.csv" in dataset["files"] and "test.csv" not in dataset["files"]
 
 
+def test_competition_info_does_not_name_the_topic(client, db):
+    assert "Protein" in db.get(Competition, 1).title
+    response = client.get("/api/competition")
+    assert "title" not in response.json() and "protein" not in response.text.lower()
+
+
 @pytest.mark.parametrize("kind", PARTICIPANT_FILES)
 def test_dataset_release_window_and_approval(client, db, monkeypatch, kind):
     from datetime import datetime, timezone
@@ -246,6 +252,18 @@ def test_public_baseline_is_code_only_even_when_competition_closed(client, db):
         assert client.get("/api/datasets/" + kind).status_code == 403
     assert client.get("/api/competition").json()["dataset"] is None
     assert client.get("/api/resources/starter-kit").status_code == 404
+
+
+def test_baseline_names_the_topic_so_only_admins_get_it_before_launch(client, db, organizer, monkeypatch):
+    monkeypatch.setattr("app.routers.common.LAUNCH_AT", now() + timedelta(days=1))
+    assert client.get("/api/resources/baseline").status_code == 403
+    login(client, add_account(db, "Early Team", "earlyteam1"))
+    assert client.get("/api/resources/baseline").status_code == 403
+    client.cookies.set("admin_session", organizer)
+    assert client.get("/api/resources/baseline").status_code == 200
+    client.cookies.clear()
+    monkeypatch.setattr("app.routers.common.LAUNCH_AT", now() - timedelta(seconds=1))
+    assert client.get("/api/resources/baseline").status_code == 200
 
 
 def test_dataset_approval_verify_and_lock(client, db, organizer):

@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -18,6 +19,24 @@ if COOKIE_SECURE and SECRET_KEY.startswith("local-development-only"):
     # administrator session with it. HTTPS deployments must set their own SECRET_KEY.
     raise RuntimeError("Set a new random SECRET_KEY in .env before running with COOKIE_SECURE=true")
 APP_ORIGIN = os.getenv("APP_ORIGIN", "http://localhost:3000")
+
+# Until this time the competition topic stays secret: the web shows only a countdown and
+# the API gives what names the topic to admins only. apps/web/app/launch.ts reads the same
+# variable and must keep the same default.
+DEFAULT_LAUNCH_AT = "2026-11-01T13:00:00+09:00"
+
+
+def _launch_at():
+    try:
+        value = datetime.fromisoformat(os.getenv("LAUNCH_AT") or DEFAULT_LAUNCH_AT)
+    except ValueError:
+        # A typo must not reveal the topic early, so fall back to the default.
+        value = datetime.fromisoformat(DEFAULT_LAUNCH_AT)
+    # Without an offset, read it as UTC like the web container does.
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+LAUNCH_AT = _launch_at()
 
 # Uploaded ZIPs live outside every web-served path and outside the read-only data mount.
 SUBMISSION_DIR = Path(os.getenv("SUBMISSION_DIR", str(REPO_ROOT / "var" / "submissions")))

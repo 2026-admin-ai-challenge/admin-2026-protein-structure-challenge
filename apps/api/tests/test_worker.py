@@ -68,6 +68,14 @@ def test_failures_are_recorded_and_count_by_default(client, db, participant, cod
     assert client.get("/api/leaderboard").json()["entries"] == []
 
 
+def test_zip_violations_found_by_the_worker_never_use_an_attempt(client, db, participant):
+    upload(client, mock_zip(fail="zip_invalid"))
+    assert client.get("/api/submissions/me").json()["used"] == 1  # held while it waits
+    row = process_one(db, MOCK, "worker-a")
+    assert (row.status, row.failure_code, row.counted) == ("failed", "zip_invalid", False)
+    assert client.get("/api/submissions/me").json()["used"] == 0
+
+
 def test_failed_attempts_are_returned_when_policy_says_so(client, db, participant):
     db.get(Settings, 1).count_failed = False
     db.commit()

@@ -255,7 +255,7 @@ export default function OverviewPanel({
           <small>CHUNGNAM NATIONAL UNIVERSITY</small>
           <h3>함께 배우고, 더 멀리 도전합니다.</h3>
           <p>
-            충남대학교 컴퓨터공학과 AI 동아리 ADMIN이 만드는 열린 AI 실험의 장.
+            충남대학교 컴퓨터인공지능학부 동아리 ADMIN이 만드는 열린 AI 실험의 장.
           </p>
         </div>
         <span className="about-symbol">↗</span>

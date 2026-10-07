@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import "./globals.css";
+// Holds neither the site's styles nor its copy: the pre-launch countdown renders under
+// this layout and must not reveal the competition topic, even in the page source.
+// The site adds both in (site)/layout.tsx.
 export const metadata: Metadata = {
-  title: "ADMIN AI Challenge 2026 · Protein Structure",
-  description:
-    "충남대학교 AI 동아리 ADMIN의 단백질 구조 분류 경진대회. CATH S40 서열·3D 좌표로 도전하세요.",
+  title: "ADMIN AI Challenge 2026",
+  description: "충남대학교 컴퓨터인공지능학부 동아리 ADMIN의 AI 추론 모델 챌린지.",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (

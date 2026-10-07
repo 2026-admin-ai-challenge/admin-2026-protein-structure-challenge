@@ -34,7 +34,7 @@
 
 | 코드 | 원인 | 횟수 차감 |
 | --- | --- | --- |
-| `zip_invalid` | 압축 내용이 규격 위반(심층 검사) | 설정 `count_failed`에 따름 |
+| `zip_invalid` | 압축 내용이 규격 위반(심층 검사) | **항상 차감 없음** |
 | `runtime_error` | 추론 코드가 0이 아닌 코드로 종료 | 〃 |
 | `timeout` | 추론이 제한 시간을 넘김 | 〃 |
 | `out_of_memory` | 메모리 한도 초과로 종료 | 〃 |
@@ -77,7 +77,6 @@
 
 ```json
 {
-  "title": "ADMIN Protein Structure Classification Challenge",
   "settings": {"is_open": true, "start_time": "2026-10-24T00:00:00Z", "end_time": "2026-10-24T09:00:00Z",
                "team_submission_limit": 20, "frozen": false, "finalized": false},
   "submission_open": true,
@@ -95,6 +94,7 @@
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
 - 미확정 정책(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다.
+- 대회 이름(`title`)도 넣지 않습니다. 이름에 대회 주제가 드러나는데, 이 응답은 대회 시작 전에도 누구나 받기 때문입니다.
 
 `GET /leaderboard?board=public|final`
 
@@ -104,6 +104,8 @@
 ```
 
 `final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
+
+`GET /resources/baseline`은 데이터 없이 코드만 담은 베이스라인 ZIP입니다. 대회 기간과 상관없이 받을 수 있지만, 코드에 대회 주제가 드러나므로 `LAUNCH_AT` 전에는 관리자만 받고 나머지는 403입니다.
 
 ## 제출 (참가자)
 
@@ -128,7 +130,7 @@
 
 - 팀 단위, 대회 전체. 날짜가 바뀌어도 복구되지 않습니다.
 - **접수된 시점에 1회 사용**합니다(`counted: true`). 접수 단계에서 거절된 업로드는 사용하지 않습니다.
-- 채점 실패 시: 관리자 설정 `count_failed`가 꺼져 있으면 그 제출의 `counted`가 `false`가 됩니다 `(임시: 기본은 차감)`. `system_error`는 항상 `false`입니다.
+- 채점 실패 시: ZIP 규격 위반(`zip_invalid`)과 서버 오류(`system_error`)는 항상 `counted: false`입니다. 나머지 실패는 1회 차감합니다(관리자 설정 `count_failed`, 기본 켜짐. 끄면 모든 실패가 미차감).
 - 같은 팀의 여러 계정이 동시에 올려도 팀 행을 잠그고 세므로 상한을 넘지 않습니다.
 
 ## 관리자

@@ -48,7 +48,7 @@ export default function ProjectFooter() {
         <div className="footer-project-intro">
           <span className="footer-eyebrow">MADE TOGETHER</span>
           <h2>함께 만드는 AI 챌린지.</h2>
-          <p>충남대학교 AI 동아리 ADMIN의 아이디어와 기여로 만들어집니다.</p>
+          <p>충남대학교 컴퓨터인공지능학부 동아리 ADMIN의 아이디어와 기여로 만들어집니다.</p>
           <a className="footer-github" href="https://github.com/2026-admin-ai-challenge/admin-2026-protein-structure-challenge" target="_blank" rel="noopener noreferrer">
             <Github size={17} aria-hidden="true" />
             <span>GitHub 프로젝트</span>
