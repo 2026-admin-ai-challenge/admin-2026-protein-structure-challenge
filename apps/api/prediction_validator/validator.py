@@ -5,12 +5,17 @@
 1. 표준 라이브러리만 쓴다. pandas 는 형식 오류를 조용히 교정하므로
    형식 검증기로 쓰면 안 된다. 특히 label 이 "1.10" 같은 'C.A' 문자열이라
    dtype 지정 없이 읽으면 1.1 이 되어 다른 클래스가 된다.
-2. 첫 오류에서 멈추지 않는다. 팀당 제출이 10회뿐이므로 한 번의 실패
+2. 첫 오류에서 멈추지 않는다. 팀당 제출이 20회로 한정돼 있으므로 한 번의 실패
    응답에 고칠 거리를 최대한 담는다. 단 코드별 예시는 MAX_SAMPLES 로 제한한다.
 3. 숨김 평가 ID 집합을 참가자 응답에 흘리지 않는다. 누락 ID(E401)는
-   개수만 알려주고 실제 ID는 운영 로그에만 남긴다.
-4. 운영 측 설정 오류(E901/E902)와 참가자 형식 오류를 구분한다.
-   제출 횟수 차감 정책(Q4)이 둘을 다르게 다뤄야 한다.
+   개수만 알려주고 실제 ID는 운영 로그에만 남긴다. 예측 파일에서 온 값도
+   기본적으로 내보내지 않는다. 참가자 코드가 숨김 평가 입력을 읽은 뒤
+   예측을 만들기 때문이다. 다만 고정 문자열인 조치 안내(hint)는 내보낸다.
+4. 운영 측 설정 오류(E901/E902/E903)와 참가자 형식 오류를 구분한다.
+   형식 오류는 제출 횟수에서 차감하지 않기로 확정됐고(웹 저장소 PR #6),
+   운영 측 오류는 그와 별개로 어떤 정책에서도 차감 대상이 아니다.
+   E903 은 계약 파일과 실제 데이터셋이 어긋난 경우로, 어긋난 계약으로는
+   어떤 판정도 신뢰할 수 없으므로 참가자 파일을 보기 전에 멈춘다.
 """
 
 from __future__ import annotations
@@ -133,6 +138,11 @@ def validate_text(
         report.record("E902")
     if report.operator_fault:
         return report
+
+    # 계약과 데이터셋이 어긋났는지는 여기서 보지 않는다. 그것은 제출마다가 아니라
+    # 작업자 시작 시점에 한 번 볼 설정 문제이고, 평가 ID 일부만 주입하는 정당한
+    # 호출자(테스트·개발 도구)를 막아서는 안 된다. `verify_contract_against_dataset`
+    # 를 쓴다.
 
     rows, parse_failed = _parse_csv(text, report)
     if parse_failed:
@@ -306,7 +316,9 @@ def _check_ids(ids: list[str], contract: Contract, report: Report) -> None:
 
     missing_count = len(missing)
 
-    if contract.expected_rows is not None and len(ids) != len(expected):
+    # 행 수는 주입된 평가 ID 개수와 비교한다. 계약의 expected_rows 는 그 값과
+    # 어긋났는지 확인하는 용도이고(E903), 비교 기준은 실제 데이터다.
+    if len(ids) != len(expected):
         detail = (
             f"예측 {len(ids)}행 / 평가 입력 {len(expected)}건"
             if contract.reveal_expected_row_count

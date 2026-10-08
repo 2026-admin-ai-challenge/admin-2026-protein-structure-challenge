@@ -60,6 +60,12 @@ class ValidationOutcome:
     operator_fault: bool
     participant_response: dict[str, Any]
     operator_detail: dict[str, Any]
+    participant_lines: list[str] = field(default_factory=list)
+    """참가자에게 보여줄 한 줄 메시지 목록(오류 + 경고). 조치 안내를 함께 담는다."""
+
+    participant_error_lines: list[str] = field(default_factory=list)
+    """거절 사유만 담은 한 줄 메시지 목록. 제출을 거절할 때 쓴다."""
+
     error_codes: list[str] = field(default_factory=list)
     warning_codes: list[str] = field(default_factory=list)
     report: Report | None = field(default=None, repr=False)
@@ -118,6 +124,54 @@ def build_contract(
     return contract
 
 
+def verify_contract_against_dataset(
+    *,
+    contract_path: str | Path | None = None,
+    eval_ids: list[str] | None = None,
+    eval_ids_csv: str | Path | None = None,
+) -> Report:
+    """계약 파일이 현재 데이터셋과 맞는지 확인한다. **작업자 시작 시 한 번 호출한다.**
+
+    데이터셋은 품질 점검 결과에 따라 재생성되고(데이터 저장소 PR #5·#11·#13),
+    그때 평가 건수가 바뀐다. 계약이 따라오지 않거나 다른 저장소의 계약 사본이
+    낡으면 낡은 계약으로 채점하게 된다.
+
+    이 검사를 제출마다 하지 않는 이유: 평가 ID 일부만 주입하는 호출이 정당하게
+    존재한다(테스트, 개발 도구). 어긋남은 제출의 성질이 아니라 설정의 성질이다.
+
+    사용 예 (작업자 시작 시):
+
+        report = verify_contract_against_dataset(
+            contract_path=PREDICTION_CONTRACT,
+            eval_ids_csv=PRIVATE_ROOT / "test.csv",
+        )
+        if not report.ok:
+            raise SystemExit(report.to_json(operator=True))
+
+    CI 에서도 같은 함수를 돌리면 배포 전에 잡힌다.
+    """
+    contract = load_contract(contract_path)
+    report = Report(contract_version=contract.version)
+
+    ids = eval_ids
+    if ids is None and eval_ids_csv is not None and Path(eval_ids_csv).is_file():
+        ids = load_eval_ids(eval_ids_csv)
+    if not ids:
+        report.record("E902", sample=str(eval_ids_csv) if eval_ids_csv else "주입 없음")
+        return report
+
+    actual = len(set(ids))
+    report.summary["contract_expected_rows"] = contract.expected_rows
+    report.summary["dataset_eval_ids"] = actual
+
+    if contract.expected_rows is not None and contract.expected_rows != actual:
+        report.record(
+            "E903",
+            sample=f"계약 expected_rows={contract.expected_rows} / 데이터셋 {actual}건",
+        )
+    return report
+
+
 def validate_submission_output(
     prediction_path: str | Path,
     *,
@@ -145,6 +199,8 @@ def validate_submission_output(
         contract_version=report.contract_version,
         operator_fault=report.operator_fault,
         participant_response=report.participant_payload(),
+        participant_lines=report.participant_lines(),
+        participant_error_lines=report.participant_lines(errors_only=True),
         operator_detail=report.operator_payload(),
         error_codes=[f.code for f in report.errors],
         warning_codes=[f.code for f in report.warnings],

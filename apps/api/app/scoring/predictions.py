@@ -33,7 +33,11 @@ def check(content: bytes, ids: list[str], classes: list[str]):
         outcome = validate_submission_output(path, contract_path=PREDICTION_CONTRACT, eval_ids=ids, classes=classes)
     if not outcome.ok:
         detail = json.dumps(outcome.operator_detail, ensure_ascii=False)[:DETAIL_CHARS]
-        message = " ".join(f"[{e['code']}] {e['message']} ({e['count']}건)" for e in outcome.participant_response["errors"])
+        # participant_error_lines keeps the code, message, count and the fixed fix-it
+        # hint, and leaves out warnings that are not why the submission was rejected.
+        # The hint is a constant in the validator, so no file or evaluation value can
+        # reach it, and it is what lets a team spend one fewer submission on a typo.
+        message = " ".join(outcome.participant_error_lines)
         raise OutputRejected(message, f"{outcome.summary_line}\n{detail}", outcome.operator_fault)
     return _in_order(content, ids), outcome.summary_line
 
