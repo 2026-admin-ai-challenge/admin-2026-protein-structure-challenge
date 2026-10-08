@@ -15,7 +15,11 @@ from .contract import (
 )
 from .errors import MAX_SAMPLES, OPERATOR_CODES, SPECS, Finding, Report, describe_codes
 from .validator import validate_file, validate_text
-from .worker_api import ValidationOutcome, validate_submission_output
+from .worker_api import (
+    ValidationOutcome,
+    validate_submission_output,
+    verify_contract_against_dataset,
+)
 
 __all__ = [
     "Contract",
@@ -34,6 +38,7 @@ __all__ = [
     "validate_file",
     "validate_submission_output",
     "validate_text",
+    "verify_contract_against_dataset",
 ]
 
 __version__ = "0.2.0"

@@ -17,8 +17,12 @@ Severity = Literal["error", "warning"]
 MAX_SAMPLES = 20
 """코드별로 보관할 예시 개수 상한.
 
-팀당 제출이 10회뿐이므로 첫 오류에서 멈추지 않고 모아서 보고한다.
-대신 응답 크기가 평가셋 크기(5,387행)만큼 커지지 않도록 상한을 둔다.
+제출 기회가 한정돼 있으므로(대회 전체 팀당 20회) 첫 오류에서 멈추지 않고 모아서
+보고한다. 대신 응답 크기가 평가셋 전체 행 수만큼 커지지 않도록 상한을 둔다.
+
+행 수를 여기 적지 않는다. 데이터셋이 재생성될 때마다 바뀌어서 주석이 먼저 낡는다.
+현재 값은 계약의 `output.expected_rows` 에 있고, 그 값이 실제 평가 ID 개수와
+어긋나면 검증기가 E903 으로 알린다.
 """
 
 
@@ -213,6 +217,13 @@ SPECS: dict[str, ErrorSpec] = {
         "채점기 설정 오류: 평가 ID 목록을 읽을 수 없습니다.",
         "운영 측 조치가 필요합니다.",
     ),
+    "E903": _s(
+        "E903", "error",
+        "채점기 설정 오류: 계약의 예상 행 수와 주입된 평가 ID 개수가 다릅니다.",
+        "운영 측 조치가 필요합니다. 데이터셋이 재생성됐는데 계약 파일이 따라오지 않았거나, "
+        "복사본 계약이 낡았습니다. contract/prediction_contract.json 의 output.expected_rows 를 "
+        "현재 데이터셋에 맞추고, 이 저장소 밖의 사본도 함께 갱신하세요.",
+    ),
     "W903": _s(
         "W903", "warning",
         "파일에 UTF-8 BOM이 있습니다.",
@@ -226,8 +237,12 @@ SPECS: dict[str, ErrorSpec] = {
     ),
 }
 
-OPERATOR_CODES = frozenset({"E901", "E902"})
-"""참가자 잘못이 아니라 운영 측 설정 문제인 코드. 제출 횟수 차감 정책(Q4)에서 제외해야 한다."""
+OPERATOR_CODES = frozenset({"E901", "E902", "E903"})
+"""참가자 잘못이 아니라 운영 측 설정 문제인 코드.
+
+제출 횟수 차감에서 제외해야 한다. 형식 오류를 차감하지 않는 것은 확정됐지만
+(웹 저장소 PR #6), 운영 측 오류는 그와 별개로 어떤 정책에서도 차감 대상이 아니다.
+"""
 
 
 @dataclass
@@ -255,7 +270,27 @@ class Finding:
             self.samples.append(sample)
 
     def to_participant(self) -> dict[str, Any]:
-        """참가자에게 반환할 형태. 숨김 평가 ID 집합을 드러내지 않는다."""
+        """참가자에게 반환할 형태. 숨김 평가 ID 집합을 드러내지 않는다.
+
+        `rows`·`samples` 는 참가자가 보낸 값이지만, 참가자 코드가 숨김 평가 입력을
+        읽은 뒤 만든 값이다. 즉 평가 데이터에서 뽑은 내용을 라벨 칸에 담아 두면
+        이 경로로 되돌아온다. 그래서 기본값은 `strict=True`(둘 다 제외)이고,
+        운영 정책에 따라 완화하려면 호출자가 명시해야 한다.
+        """
+        return self.to_participant_payload(strict=True)
+
+    def to_participant_payload(self, *, strict: bool = True) -> dict[str, Any]:
+        """참가자 응답 1건.
+
+        `message` 와 `hint` 는 이 모듈에 박힌 고정 문자열이다. 참가자 데이터도
+        평가 데이터도 흘러들어갈 수 없으므로 strict 모드에서도 내보낸다.
+        `hint` 가 빠지면 참가자는 무엇이 틀렸는지만 알고 어떻게 고치는지는
+        모르게 되어, 한정된 제출 기회를 그만큼 더 쓴다.
+
+        strict=False 는 `rows`·`samples` 까지 포함한다. 참가자 코드가 숨김 평가
+        입력을 읽으므로 이 경로로 평가 데이터가 되돌아올 수 있다. 운영 정책으로
+        허용한 경우에만 쓴다.
+        """
         out: dict[str, Any] = {
             "code": self.code,
             "severity": self.severity,
@@ -263,7 +298,7 @@ class Finding:
             "hint": self.spec.hint,
             "count": self.count,
         }
-        if not self.spec.leaks_eval_set:
+        if not strict and not self.spec.leaks_eval_set:
             if self.rows:
                 out["rows"] = self.rows
             if self.samples:
@@ -335,13 +370,38 @@ class Report:
     def codes(self) -> list[str]:
         return [f.code for f in self.findings]
 
-    def participant_payload(self) -> dict[str, Any]:
+    def participant_payload(self, *, strict: bool = True) -> dict[str, Any]:
+        """참가자에게 보낼 응답 전체.
+
+        기본은 strict: 코드·메시지·조치 안내·건수만 담고, 예측 파일에서 온 값
+        (`rows`·`samples`)은 담지 않는다. 참가자 코드가 숨김 평가 입력을 읽으므로
+        그 값들은 평가 데이터를 실어 나를 수 있다.
+
+        `hint`(조치 안내)는 strict 에서도 포함한다. 고정 문자열이라 어떤 데이터도
+        흘러들어가지 않고, 참가자가 제출을 덜 버리게 해 준다.
+        """
         return {
             "ok": self.ok,
             "contract_version": self.contract_version,
-            "errors": [f.to_participant() for f in self.errors],
-            "warnings": [f.to_participant() for f in self.warnings],
+            "errors": [f.to_participant_payload(strict=strict) for f in self.errors],
+            "warnings": [f.to_participant_payload(strict=strict) for f in self.warnings],
         }
+
+    def participant_lines(self, *, errors_only: bool = False) -> list[str]:
+        """참가자 화면·응답에 그대로 쓸 한 줄 문자열 목록.
+
+        채점 작업자가 메시지를 직접 조립하면서 `hint` 를 빠뜨리는 일이 있었다.
+        조립 방식을 여기서 한 번 정해 두면 양쪽이 같은 내용을 보여 준다.
+
+        `errors_only=True` 는 거절 사유만 담는다. 제출을 거절할 때는 경고를 함께
+        붙이면 참가자가 무엇 때문에 막혔는지 찾기 어려워진다. 통과한 제출에
+        경고를 보여줄 때는 기본값을 쓴다.
+        """
+        findings = self.errors if errors_only else self.errors + self.warnings
+        return [
+            f"[{f.code}] {f.spec.message} ({f.count}건) {f.spec.hint}"
+            for f in findings
+        ]
 
     def operator_payload(self) -> dict[str, Any]:
         return {
