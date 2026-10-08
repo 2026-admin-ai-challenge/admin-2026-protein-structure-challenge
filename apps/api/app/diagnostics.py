@@ -12,7 +12,7 @@ PACKAGES = {
 }
 EXPLANATIONS = {
     "FileNotFoundError": ("필요한 파일을 찾지 못했습니다.", "모델 파일이 ZIP의 model/ 폴더에 포함됐는지, 코드의 상대 경로와 파일명 대소문자가 일치하는지 확인하세요."),
-    "ImportError": ("라이브러리 또는 기능을 불러오지 못했습니다.", "학습 환경과 채점 환경의 패키지 버전을 맞추고, 같은 평가 이미지에서 모델 로드와 import를 확인하세요."),
+    "ImportError": ("라이브러리 또는 기능을 불러오지 못했습니다.", "requirements.txt에 학습 때 쓴 패키지와 버전을 적었는지, 그 버전에서 모델 로드와 import가 되는지 확인하세요."),
     "KeyError": ("코드가 요청한 키나 컬럼이 없습니다.", "입력 CSV의 컬럼명과 저장한 모델 묶음의 키가 추론 코드와 일치하는지 확인하세요."),
     "ValueError": ("입력값이나 데이터 형식이 코드의 예상과 다릅니다.", "학습·추론의 특징 개수, 컬럼 순서, 자료형과 전처리 방식이 같은지 확인하세요."),
     "TypeError": ("함수 인자 또는 데이터 자료형이 맞지 않습니다.", "오류가 난 함수의 인자와 학습·추론 환경의 라이브러리 버전을 확인하세요."),
@@ -33,10 +33,10 @@ def failure_detail(code, log):
         package = PACKAGES.get(missing.group(1).split(".")[0])
         if package:
             cause = f"채점 환경에서 {package} 라이브러리를 찾지 못했습니다 (ModuleNotFoundError). 모델 파일을 읽을 때도 학습에 사용한 라이브러리가 필요할 수 있습니다."
-            help_text = f"운영진에게 평가 이미지의 {package} 지원 여부를 확인하세요. requirements.txt에 적는 것만으로 채점 시 설치되지는 않습니다. 지원되는 공통 이미지로 학습·추론 환경을 맞춘 뒤 다시 제출하세요."
+            help_text = f"requirements.txt에 {package}를 학습 때 쓴 버전으로 적어 다시 제출하세요. 적은 패키지는 추론 전에 설치됩니다."
         else:
             cause = "필요한 Python 모듈을 찾지 못했습니다 (ModuleNotFoundError)."
-            help_text = "사용한 라이브러리가 평가 이미지에 설치됐는지, 직접 작성한 모듈이 ZIP에 포함됐는지 확인하세요. 채점 중에는 패키지를 설치할 수 없습니다."
+            help_text = "사용한 라이브러리를 requirements.txt에 적었는지, 직접 작성한 모듈이 ZIP에 포함됐는지 확인하세요. 추론 중에는 인터넷을 쓸 수 없어 실행 중 설치는 되지 않습니다."
     else:
         exception = last.split(":", 1)[0]
         if exception not in EXPLANATIONS:

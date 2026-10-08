@@ -102,6 +102,8 @@ def test_zip_is_stored_and_queued_without_scoring(client, db, participant):
     (make_zip({"inference.py": "x", "requirements.txt": "x", "model/w.bin": "x"}), "code.zip", 422, "zip_invalid"),
     (make_zip({"code/inference.py": "x", "code/requirements.txt": "x", "code/model/w.bin": "x"}), "code.zip", 422, "zip_invalid"),
     (make_zip(extra={"../escape.txt": "x"}), "code.zip", 422, "zip_invalid"),
+    # requirements.txt may not make pip fetch other files, paths or URLs.
+    (make_zip(extra={"requirements.txt": "numpy\n-e .\n"}), "code.zip", 422, "zip_invalid"),
 ])
 def test_bad_uploads_are_refused_without_using_an_attempt(client, db, participant, content, name, status, code):
     response = upload(client, content, name=name)

@@ -35,6 +35,7 @@
 | 코드 | 원인 | 횟수 차감 |
 | --- | --- | --- |
 | `zip_invalid` | 압축 내용이 규격 위반(심층 검사) | **항상 차감 없음** |
+| `install_failed` | `requirements.txt`의 패키지를 설치하지 못함. `error_message`에 pip의 `ERROR:` 줄 | 설정 `count_failed`에 따름 |
 | `runtime_error` | 추론 코드가 0이 아닌 코드로 종료 | 〃 |
 | `timeout` | 추론이 제한 시간을 넘김 | 〃 |
 | `out_of_memory` | 메모리 한도 초과로 종료 | 〃 |
@@ -191,13 +192,14 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 code.zip
 ├── inference.py        필수
 ├── train.py            필수. 채점 때 실행하지 않음
-├── requirements.txt    필수. 사용 패키지 명세일 뿐, 채점 중 설치하지 않음
+├── requirements.txt    필수. 추론 전에 설치할 패키지
 └── model/              필수. 학습된 가중치와 전처리 객체
 ```
 
 - 필수 항목은 **ZIP 최상위**에 있어야 합니다. 목록은 환경변수 `ZIP_REQUIRED`.
 - 압축 ZIP 최대 500 MB(`MAX_ZIP_BYTES`, 확정). 해제 후 합계 2 GiB, 항목 2,000개(`MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, 임시).
 - 거절: 절대 경로, `..`, 심볼릭 링크·특수 파일, 같은 경로 중복, 암호화.
+- `requirements.txt` 검사(`app/packages.py`): 패키지 종류와 버전은 제한하지 않습니다. pip이 인덱스 밖에서 무언가를 가져오게 하는 줄(`-r`·`-c`·`-e`, 경로·URL)과 알 수 없는 옵션만 `422 zip_invalid`로 거절합니다. 인덱스 옵션과 `--hash`는 무시하고, Linux 컨테이너에 해당하지 않는 환경 표시(`; sys_platform == "win32"`) 줄은 건너뜁니다. 같은 패키지 줄은 버전 조건을 합치고, `+cu128` 같은 로컬 버전 표시는 지웁니다. 최대 64 KB·300개, UTF-8 또는 UTF-16(BOM). pip에는 원문이 아니라 `packaging`이 다시 쓴 요구사항만 넘깁니다.
 
 ## 추론 실행 계약 `(임시, 데이터/평가팀과 확정 필요)`
 
@@ -216,6 +218,8 @@ code.zip
 `--input`은 데이터팀 베이스라인과 같이 **특징 CSV 파일 경로**입니다. 서열이나 구조를 쓰는 모델은 같은 폴더(`Path(args.input).parent`)의 `test.csv`, `test_structures.zip`을 읽습니다. 서버의 `EVAL_INPUT_HOST_DIR`에는 이 세 파일만 둔 별도 폴더를 지정하고, 정답이 들어 있는 `data/private`를 그대로 연결하지 않습니다.
 
 - 네트워크 없음, 읽기 전용 루트, 일반 사용자(65534), CPU·메모리·프로세스 수 제한, `/tmp`만 쓰기 가능.
+- 이미지에는 기본 패키지(`apps/evaluator/requirements.txt`)만 설치되어 있고, 데이터팀 89개 목록의 wheel은 `/opt/wheels`에 받아만 둡니다. `requirements.txt`가 패키지를 요구하면 설치 컨테이너가 제출 전용 Docker 볼륨에 가상환경을 만듭니다. ① 먼저 **네트워크 없이** `/opt/wheels`만으로 설치하고, ② 거기에 없는 패키지·버전이 있을 때만 **네트워크를 연** 컨테이너에서 PyPI(와 PyTorch CPU 인덱스)로 받습니다. 두 단계 모두 추론과 같은 제한(읽기 전용, 사용자 65534 등)을 걸고, 제출 내용과 평가 입력은 붙이지 않으며, wheel만 받으므로 네트워크가 열린 동안 참가자가 고른 코드는 실행되지 않습니다. 추론 컨테이너는 볼륨을 `/deps`에 읽기 전용으로 받고 `/deps/venv/bin`이 PATH 맨 앞이라 `python`이 그 환경을 씁니다. 추론에는 계속 네트워크가 없습니다.
+- 설치 시간(`EVAL_INSTALL_TIMEOUT_SECONDS`, 두 단계 합계 기본 600초)은 추론 제한과 따로 셉니다. 없는 패키지·버전 충돌·wheel 없음은 `install_failed`(팀 책임), PyPI 연결 실패·설치 시간 초과·docker 오류는 `system_error`(차감 없음)입니다. 온라인 단계의 내려받은 파일은 공유 볼륨 `admin-eval-pip-cache`(`EVAL_PIP_CACHE_VOLUME`, 비우면 끔)에 캐시합니다. 패키지 볼륨은 채점이 끝나면 지웁니다.
 - 정답, Public/Private 분할표, DB 정보, Docker 소켓은 컨테이너에 주지 않습니다. 정답 비교는 컨테이너 밖 worker가 합니다.
 - 명령은 환경변수 `EVAL_COMMAND`, 이미지는 `EVAL_IMAGE`, 자원은 `EVAL_CPUS`·`EVAL_MEMORY`·`EVAL_PIDS`로 바꿉니다.
 
@@ -223,6 +227,6 @@ code.zip
 
 1. `/input` 아래 파일 이름과 스키마(서열 CSV, 특징 CSV, 구조 NPZ의 배치).
 2. 진입점 형태: 위의 `--input/--output` 인자 방식으로 고정해도 되는가.
-3. 고정 채점 이미지에 넣을 패키지와 버전(`apps/evaluator/requirements.txt` 초안).
+3. 채점 이미지의 기본 패키지(`apps/evaluator/requirements.txt`)와 미리 받아 둘 89개 목록(`runtime/requirements-competition.lock.txt`). 목록을 바꾸면 사본을 갱신하고 이미지를 다시 빌드합니다. 목록 밖 패키지도 설치는 되지만 PyPI에서 받으므로 느립니다.
 4. `metadata.json`에 `version`과 `validation`(검증 통과 여부)을 넣어 줄 수 있는가. 관리자 데이터 화면이 이 값을 읽습니다.
 5. 작은 공개 예제 입출력 파일의 이름. 지금은 `example_io.zip`으로 가정했습니다.

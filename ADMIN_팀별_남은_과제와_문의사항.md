@@ -67,6 +67,22 @@
 3. **데이터 인계:** 데이터 팀이 생성·검증한 버전의 manifest와 파일 해시를 전달한다. 웹/API 팀은 그 버전만 읽기 전용으로 마운트하고 관리자 승인 후 공개한다.
 4. **점수 계약:** 전체 허용 클래스에 대한 Macro F1, Public/Private 분할, 팀 최고 Public 기록, 최종 제출물 선택 방식을 동일 문서·코드·화면에 적용한다.
 
+## 채점 시 패키지 설치 후속 작업
+
+2026-10-07 기준. 채점 이미지에는 기본 패키지만 설치하고, 데이터 팀 89개 목록(`runtime/requirements-competition.lock.txt`)의 wheel은 받아만 둔다. 제출 `requirements.txt`의 패키지는 채점 직전에 적힌 버전대로 설치한다. 먼저 네트워크 없이 미리 받아 둔 wheel로 설치하고, 거기에 없는 패키지·버전만 네트워크를 열어 PyPI에서 받는다. 추론은 계속 네트워크 없이 실행한다(브랜치 `feat/install-submission-packages`). 아래는 이 변경에 이어서 할 일이다.
+
+- [ ] **웹/API** 브랜치를 push하고 PR을 연다.
+- [ ] **웹/API·운영** 채점 이미지를 새로 빌드해 `admin-evaluator:latest`로 교체한다(`docker build -t admin-evaluator:latest apps/evaluator`). 설치 스크립트가 없는 예전 이미지면 worker가 "준비 안 됨: rebuild"를 표시하고 채점하지 않는다.
+- [ ] **운영** 채점 컴퓨터가 `pypi.org`, `files.pythonhosted.org`, `download.pytorch.org`에 접속할 수 있는지 확인한다. 막혀 있으면 목록 밖 패키지를 쓰는 제출이 `system_error`로 멈춘다.
+- [ ] **운영·웹/API** 온라인 설치 컨테이너는 기본 bridge 네트워크라 PyPI뿐 아니라 내부망에도 닿을 수 있다. 실행되는 것은 pip뿐이지만, 필요하면 외부 인터넷만 허용하는 네트워크로 좁힌다.
+- [ ] **웹/API** `fix/eval-input-check`를 머지할 때 `apps/api/app/evaluators/docker.py`의 `ready()` 충돌을 해결한다. `fix/evaluator-boosting-packages`의 내용(libgomp1, xgboost-cpu)은 이 브랜치에 들어 있으므로 확인 후 닫는다.
+- [ ] **운영** 참가자 공지: 패키지 설치에 실패하면(없는 패키지, Linux용 wheel 없음, 버전 충돌) `install_failed`로 횟수가 차감된다. 목록의 버전을 쓰면 설치가 빠르다는 점도 알린다.
+- [ ] **운영** GPU 서버에서 `pip freeze`로 만든 파일의 `nvidia-*`, `triton`도 일단 그대로 받아 설치하기로 했다(2026-10-07). 수 GB라 설치 시간 제한(600초)에 걸려 `system_error`가 잦으면 건너뛰는 방안을 다시 검토한다.
+- [ ] **데이터** 스타터킷·베이스라인 `requirements.txt`의 `jupyterlab`은 추론에 필요 없고 PyPI에서 받느라 느리므로 뺀다.
+- [ ] **데이터** `runtime/README.md`(규칙 2·3)와 `COMPETITION_PACKAGES.md`의 "제출마다 requirements.txt를 설치하지 않는다"는 문구를 새 방식에 맞게 고친다.
+- [ ] **데이터→웹/API** 89개 목록이 바뀌면 `apps/evaluator/requirements-competition.lock.txt` 사본을 갱신하고 채점 이미지를 다시 빌드한다. 낡아도 채점은 되지만 빠진 패키지를 매번 PyPI에서 받는다.
+- [ ] **웹/API** (선택) 같은 패키지 조합의 설치 결과(가상환경)를 제출 간에 재사용한다. 지금은 제출마다 새로 설치하며, 89개 전부 설치에 약 20초가 걸린다. PyPI에서 받은 파일만 공유 캐시(`admin-eval-pip-cache`)에 남는다.
+
 ## 공동 문의사항·미결정 사항
 
 아래 항목은 **질문으로 남겨 둔다.** 이전 회의에서 1~3번·5번·6번으로 분류했던 서버 처리량, 제출 규약, 압축 안전 상한, 제출 차감 세칙, 리허설은 지금 수치를 임의로 정하지 않는다. 다만 담당 팀의 준비 작업에는 포함한다.

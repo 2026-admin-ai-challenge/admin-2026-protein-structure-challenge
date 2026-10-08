@@ -1,10 +1,11 @@
-# DRAFT package list for the scoring image. Keep versions pinned and publish this file to
-# participants so their requirements.txt can match it.
+# Base packages installed in the scoring image and available to every submission, whatever
+# its requirements.txt says. Each must appear with the same version in
+# requirements-competition.lock.txt: the image installs them from the wheels of that list.
+# Anything else a submission lists is installed per submission (see install_packages.py).
 numpy==2.5.3
 pandas==3.0.6
 scipy==1.18.1
 scikit-learn==1.9.1
 joblib==1.6.0
-# CPU-only PyTorch wheel (no CUDA in the scoring container).
---extra-index-url https://download.pytorch.org/whl/cpu
+# The wheelhouse holds the CPU-only build (no CUDA in the scoring container).
 torch==2.14.1

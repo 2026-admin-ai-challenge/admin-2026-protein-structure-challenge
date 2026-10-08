@@ -11,6 +11,7 @@ import { useAdminData } from "./useAdmin";
 const STATUSES = ["queued", "running", "succeeded", "failed"];
 const FAILURE_CODES = [
   "zip_invalid",
+  "install_failed",
   "runtime_error",
   "timeout",
   "out_of_memory",

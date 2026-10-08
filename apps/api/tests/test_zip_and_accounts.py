@@ -13,7 +13,7 @@ from app.security import verify
 from app.zipcheck import ZipRejected
 from conftest import make_zip
 
-VALID = {"inference.py": "x", "train.py": "x", "requirements.txt": "x", "model/w.bin": "x"}
+VALID = {"inference.py": "x", "train.py": "x", "requirements.txt": "numpy\n", "model/w.bin": "x"}
 
 
 def write(tmp_path, content):
@@ -32,7 +32,7 @@ def raw_zip(entries):
 
 def test_valid_zip_is_measured(tmp_path):
     report = zipcheck.inspect(write(tmp_path, make_zip({**VALID, "model/sub/extra.bin": b"12345"})))
-    assert report == {"entries": 5, "unpacked_bytes": 4 + 5}
+    assert report == {"entries": 5, "unpacked_bytes": 3 + 6 + 5, "packages": ["numpy"]}
 
 
 @pytest.mark.parametrize("files", [
@@ -73,7 +73,7 @@ def test_symlinks_duplicates_and_limits(tmp_path):
 def test_safe_extract_writes_only_inside_destination(tmp_path):
     destination = tmp_path / "out"
     written = zipcheck.safe_extract(write(tmp_path, make_zip({**VALID, "model/sub/deep.bin": b"abc"})), destination)
-    assert written == 7
+    assert written == 12
     assert sorted(p.relative_to(destination).as_posix() for p in destination.rglob("*") if p.is_file()) == [
         "inference.py", "model/sub/deep.bin", "model/w.bin", "requirements.txt", "train.py"]
     assert (destination / "model/sub/deep.bin").read_bytes() == b"abc"
