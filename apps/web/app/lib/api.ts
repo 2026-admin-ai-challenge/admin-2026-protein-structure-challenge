@@ -6,7 +6,11 @@ export class ApiError extends Error {
   status: number;
   code?: string;
   constructor(message: string, status: number, code?: string) {
-    super(message);
+    const context = [status > 0 ? `HTTP ${status}` : "", code ? `오류 코드: ${code}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+    super(context ? `${message}\n[${context}]` : message);
+    this.name = "ApiError";
     this.status = status;
     this.code = code;
   }
@@ -20,8 +24,23 @@ function failure(status: number, body: unknown) {
     status >= 500
       ? "서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도하세요."
       : "요청 정보를 확인해 주세요.";
+  // FastAPI validation failures contain one entry per invalid field. Only show
+  // the location and message; input/ctx can contain passwords or other secrets.
+  const validation = Array.isArray(data.detail)
+    ? data.detail.flatMap((entry: unknown) => {
+        if (!entry || typeof entry !== "object") return [];
+        const item = entry as { loc?: unknown; msg?: unknown };
+        if (typeof item.msg !== "string") return [];
+        const location = Array.isArray(item.loc)
+          ? item.loc.filter((part) => typeof part === "string" || typeof part === "number").join(".")
+          : "";
+        return [location ? `${location}: ${item.msg}` : item.msg];
+      }).join("\n")
+    : "";
   return new ApiError(
-    typeof data.detail === "string" ? data.detail : fallback,
+    typeof data.detail === "string" && data.detail.trim()
+      ? data.detail
+      : validation ? `입력값을 확인해 주세요.\n${validation}` : fallback,
     status,
     typeof data.code === "string" ? data.code : undefined,
   );
@@ -31,14 +50,24 @@ export async function api<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch("/api" + path, {
-    ...options,
-    headers: {
-      ...CSRF_HEADER,
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch("/api" + path, {
+      ...options,
+      headers: {
+        ...CSRF_HEADER,
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ApiError(
+      "서버에 연결할 수 없습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.",
+      0,
+      "network",
+    );
+  }
   const body = await response.json().catch(() => null);
   if (!response.ok) throw failure(response.status, body);
   return body as T;

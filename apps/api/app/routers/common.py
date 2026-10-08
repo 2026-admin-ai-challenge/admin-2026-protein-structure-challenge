@@ -56,9 +56,11 @@ def queue_positions(db):
 
 def submission_view(row, positions=None):
     """What a team may see. Never includes the Private score or container output."""
+    from ..diagnostics import failure_detail
     return {
         "id": row.id, "filename": row.filename, "status": row.status, "failure_code": row.failure_code,
         "error_message": row.error_message, "public_score": row.public_score, "counted": row.counted,
+        "failure_detail": failure_detail(row.failure_code, row.log_tail) if row.status == "failed" else None,
         "size_bytes": row.size_bytes, "sha256": row.sha256, "file_deleted": row.file_deleted, "evaluator": row.evaluator,
         "queue_position": (positions or {}).get(row.id),
         "created_at": row.created_at, "started_at": row.started_at, "finished_at": row.finished_at,

@@ -22,6 +22,7 @@ export type Submission = {
   status: SubmissionStatus;
   failure_code: string | null;
   error_message: string | null;
+  failure_detail?: string | null;
   public_score: number | null;
   counted: boolean;
   size_bytes: number | null;

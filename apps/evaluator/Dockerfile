@@ -7,7 +7,7 @@
 # Before inference the worker runs install_packages.py in this image to install what a
 # submission's requirements.txt lists into an environment of its own: from /opt/wheels
 # without network first, and from PyPI only when something is missing there.
-FROM python:3.12-slim
+FROM python:3.12.14-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 # OpenMP runtime: LightGBM needs libgomp.so.1, which the slim image does not include.
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*

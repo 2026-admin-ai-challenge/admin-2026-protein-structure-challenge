@@ -1,0 +1,17 @@
+# Deploy from images built by GitHub Actions instead of building on the server.
+# The web server has one OCPU: building there takes half an hour, pulling takes a minute.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# Pulling needs `docker login ghcr.io` once (a token with read:packages).
+services:
+  api:
+    image: ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/api:latest
+    build: !reset null
+  worker:
+    image: ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/worker:latest
+    build: !reset null
+  web:
+    image: ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/web:latest
+    build: !reset null
