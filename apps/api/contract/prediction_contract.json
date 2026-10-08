@@ -103,7 +103,7 @@
     "drift_guard": "작업자 시작 시 verify_contract_against_dataset() 를 호출한다. 어긋나면 E903. 제출 검증 경로에서는 보지 않는다 (평가 ID 일부만 주입하는 호출이 정당하므로)."
   },
   "decided": {
-    "Q4": "형식 오류는 팀당 제출 횟수(20회)에서 차감하지 않는다. 웹 저장소 PR #6.",
+    "Q4": "ZIP 규격 위반(zip_invalid)과 서버 오류(system_error)만 제출 횟수에서 제외한다. 예측 출력 형식 오류(output_invalid)를 포함한 나머지 채점 실패는 1회 차감한다. 대회 운영 시 count_failed=True를 유지한다. 웹 저장소 PR #6 및 운영진 확정 기준.",
     "Q8": "클래스 20개는 metadata.json 의 labels 를 주입해 사용한다.",
     "submission_limit": "대회 전체 팀당 20회. 웹 저장소 PR #7 (10회에서 상향).",
     "dataset_availability": "데이터셋이 저장소에 커밋돼 실데이터 검증이 가능하다."

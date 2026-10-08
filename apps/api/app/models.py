@@ -51,8 +51,8 @@ class Settings(Base):
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Whole-competition limit per team. Never resets by date.
     team_submission_limit: Mapped[int] = mapped_column(Integer, default=DEFAULT_TEAM_SUBMISSION_LIMIT)
-    # Policies stay configurable instead of being hard-coded. Q4 is undecided; Q7 is
-    # decided as best_public, the default.
+    # Policies stay configurable. Q4 requires count_failed=True: only ZIP violations
+    # and server faults are uncounted. Q7 is decided as best_public, the default.
     count_failed: Mapped[bool] = mapped_column(Boolean, default=True)
     final_selection: Mapped[str] = mapped_column(String(16), default="best_public")
     frozen: Mapped[bool] = mapped_column(Boolean, default=False)

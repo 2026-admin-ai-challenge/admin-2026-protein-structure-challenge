@@ -98,7 +98,7 @@
 - `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
-- 미확정 정책(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다.
+- 운영 설정(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다. 확정된 제출 차감 기준을 적용하려면 관리자 설정 `count_failed`를 켜 둡니다.
 - 대회 이름(`title`)도 넣지 않습니다. 이름에 대회 주제가 드러나는데, 이 응답은 대회 시작 전에도 누구나 받기 때문입니다.
 
 `GET /leaderboard?board=public|final`
