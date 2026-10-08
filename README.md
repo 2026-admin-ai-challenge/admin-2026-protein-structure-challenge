@@ -119,7 +119,7 @@ docker compose exec api python -m app.create_admin
 - 화면에서 재설정한 비밀번호는 계정 시트(`accounts/participants.csv`)에 반영되지 않습니다. 이후 시트를 다시 불러오면 시트의 비밀번호로 돌아가므로 한 가지 방법만 쓰세요.
 - 화면에 "mock 채점" 표시가 있으면 점수가 가짜입니다. 실제 대회는 아래의 Docker 격리 평가기로 실행합니다.
 - `docker compose down -v`는 계정, 제출 기록, 점수, 제출 ZIP을 **전부 삭제**합니다. 서비스를 내릴 때는 `-v` 없이 `down`이나 `stop`만 씁니다.
-- ngrok 등 공개 주소로 띄운 동안에는 그 주소에서만 로그인됩니다. `localhost:3000`에서는 로그인이 거절됩니다.
+- 공개 도메인으로 띄운 동안에는 `.env`의 `APP_ORIGIN`에 적은 그 주소에서만 로그인됩니다. `localhost:3000`에서는 로그인이 거절됩니다.
 
 ### 서버에서 쓰는 명령
 

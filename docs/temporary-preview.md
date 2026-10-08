@@ -23,37 +23,6 @@ docker compose -f docker-compose.yml -f docker-compose.preview.yml stop tunnel
 
 데이터베이스와 로컬 웹 서비스는 유지됩니다. 다시 로컬 주소에서 로그인하려면 `.env`의 `APP_ORIGIN`을 http://localhost:3000으로 되돌리고 API를 재시작합니다.
 
-## ngrok으로 공유하기
-
-Cloudflare 대신 ngrok을 쓸 수 있습니다. 계정마다 고정 주소(dev domain) 하나가 나와서 재시작해도 주소가 바뀌지 않습니다.
-
-1. https://dashboard.ngrok.com 에서 가입하고 authtoken과 dev domain(예: `something.ngrok-free.app`)을 확인합니다.
-2. `.env`에 두 값을 적습니다. 도메인에는 `https://`를 붙이지 않습니다. 도메인은 `이름.ngrok-free.app`이나 `이름.ngrok-free.dev` 꼴의 주소입니다. 대시보드에 함께 보이는 `rd_`로 시작하는 값은 ID라서 넣으면 `ERR_NGROK_314`로 실패합니다.
-   ```bash
-   NGROK_AUTHTOKEN=발급받은_토큰
-   NGROK_DOMAIN=something.ngrok-free.app
-   ```
-3. `.env`의 `SECRET_KEY`가 저장소에 공개된 개발용 기본값이면 새 난수로 바꿉니다. 기본값 그대로면 API가 시작을 거부합니다.
-4. 실행합니다. `APP_ORIGIN`과 `COOKIE_SECURE`는 이 구성이 자동으로 맞춥니다.
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.ngrok.yml up --build -d
-   ```
-5. `docker compose -f docker-compose.yml -f docker-compose.ngrok.yml logs ngrok`에서 `started tunnel`을 확인하고 `https://<NGROK_DOMAIN>`으로 접속합니다.
-
-이 구성으로 띄운 동안에는 **ngrok 주소로만** 로그인됩니다. `http://localhost:3000`에서는 화면은 열리지만 로그인·제출 요청이 거절됩니다. 로컬 개발로 돌아가려면 `docker compose up -d`로 다시 띄웁니다.
-
-중지: `docker compose -f docker-compose.yml -f docker-compose.ngrok.yml stop ngrok`
-
-### 무료 요금제의 한계 (2026-10 ngrok 문서 기준)
-
-| 항목 | 무료 한도 | 이 사이트에서의 의미 |
-| --- | --- | --- |
-| 나가는 전송량 | 월 1 GB | 학습 데이터 다운로드(구조 ZIP 등) 몇 번이면 소진 |
-| HTTP 요청 | 월 20,000건 | 화면이 상태를 주기적으로 조회하므로 여러 팀이 몇 시간 쓰면 소진 |
-| 안내 페이지 | 처음 접속 때 표시 | 방문자가 "Visit Site"를 한 번 눌러야 함(7일 유지) |
-
-따라서 무료 요금제는 **팀 내부 시연과 리허설용**입니다. 실제 대회는 유료 요금제(Pay-as-you-go)나 학교망에서 직접 접속되는 주소로 운영하세요. 사용량은 ngrok 대시보드의 Usage에서 확인합니다. 큰 ZIP 업로드가 ngrok을 통과하는지는 아직 확인하지 못했으니 리허설 때 실제 크기로 올려 보세요.
-
 ## 데이터 공개 정책
 
 학습 데이터는 운영자가 데이터 버전을 승인하고, 시작·종료 시각을 설정해 대회를 연 뒤 `[start_time, end_time)` 동안만 내려받을 수 있습니다. 수동으로 닫거나 최종 순위를 공개하면 즉시 차단합니다. 평가 입력과 정답은 어떤 경로로도 내려받을 수 없습니다.
