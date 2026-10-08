@@ -97,7 +97,6 @@ export type Meta = {
 };
 export type Competition = {
   zip_retention?: "best_public" | "keep_all";
-  title: string;
   settings: Settings;
   submission_open: boolean;
   dataset_available: boolean;

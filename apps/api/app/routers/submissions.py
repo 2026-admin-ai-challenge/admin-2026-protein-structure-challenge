@@ -45,7 +45,7 @@ def accept(db, user, filename, key, temporary, size, digest):
     team = db.scalar(select(Team).where(Team.id == user.team_id).with_for_update())
     locked = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
     if locked.banned:
-        raise HTTPException(403, "계정에 접근할 수 없습니다.")
+        raise ApiError(403, "banned", "계정에 접근할 수 없습니다.")
     stamp = now()
     if not submission_open(settings, stamp):
         raise ApiError(403, "closed", "현재 제출 기간이 아닙니다.")

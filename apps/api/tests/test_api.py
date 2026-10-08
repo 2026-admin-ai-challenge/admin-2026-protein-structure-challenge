@@ -164,12 +164,35 @@ def test_time_gate(client, db, participant):
     assert upload(client).status_code == 403
 
 
-def test_csrf_and_login_rate_limit(client):
+def stop_the_clock(monkeypatch):
+    """Rate limits count per wall-clock minute; a test crossing a minute boundary would reset its count."""
+    from types import SimpleNamespace
+    monkeypatch.setattr("app.security.time", SimpleNamespace(time=lambda: 1_000_000_020.0))
+
+
+def test_csrf_and_login_rate_limit(client, monkeypatch):
+    stop_the_clock(monkeypatch)
     assert client.post("/api/auth/logout", headers={"x-requested-with": "bad"}).status_code == 403
     assert client.post("/api/auth/logout", headers={"origin": "https://evil.example"}).status_code == 403
     for _ in range(10):
         assert client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"}).status_code == 429
+    refused = client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"})
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+
+
+def test_upload_rate_limit_and_banned_account_carry_codes(client, db, participant, organizer, monkeypatch):
+    stop_the_clock(monkeypatch)
+    # Neither uses an attempt, and a client can tell them from limit_reached and closed.
+    for _ in range(10):
+        assert upload(client, b"not a zip").json()["code"] == "zip_invalid"
+    refused = upload(client, b"not a zip")
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+    session = client.cookies.get("admin_session")
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/users/{participant['id']}", json={"banned": True}).status_code == 200
+    client.cookies.set("admin_session", session)
+    blocked = client.get("/api/submissions/me")
+    assert blocked.status_code == 403 and blocked.json()["code"] == "banned"
 
 
 def test_settings_validation_and_audit(client, db, organizer):

@@ -8,7 +8,7 @@
 
 - 모든 경로는 `/api`로 시작합니다. 로그인 세션은 `admin_session` 쿠키(HttpOnly, 12시간)입니다.
 - `POST`, `PATCH`에는 헤더 `X-Requested-With: ADMIN-Challenge`가 필요합니다.
-- 오류 응답은 `{"detail": "한국어 안내", "code": "기계용 코드"}`입니다. `code`는 제출 접수 오류에만 항상 있습니다.
+- 오류 응답은 `{"detail": "한국어 안내", "code": "기계용 코드"}`입니다. 제출 접수 거절에는 401(로그인 필요)을 빼고 항상 `code`가 있습니다. 차단 계정(`banned`), 요청 속도 제한(`rate_limited`), 잘못된 Content-Length(`bad_request`)도 경로와 관계없이 `code`를 붙입니다. 그 밖의 오류는 `detail`만 있을 수 있습니다.
 - 시각은 모두 UTC ISO 8601입니다.
 
 ## 제출 상태
@@ -53,12 +53,15 @@
 
 | HTTP | `code` | 상황 |
 | --- | --- | --- |
+| 400 | `bad_request` | Content-Length가 숫자가 아님 |
 | 401 | — | 로그인 필요, 또는 비밀번호 재설정으로 세션 만료 |
+| 403 | `banned` | 차단된 계정 |
 | 403 | `closed` | 제출 기간이 아님 |
 | 413 | `zip_too_large` | 압축 ZIP이 상한 초과 |
 | 415 | `not_zip` | 파일 이름이 `.zip`이 아님 |
 | 422 | `zip_invalid` | ZIP이 아님, 손상, 필수 항목 누락, 경로 순회, 심볼릭 링크, 중복 경로, 항목 수·해제 크기 초과 |
 | 429 | `limit_reached` | 팀 제출 횟수 소진 |
+| 429 | `rate_limited` | 계정당 1분에 10회를 넘는 업로드 시도(1분 뒤 다시 가능) |
 
 ## 인증
 
@@ -119,7 +122,7 @@
 
 ```json
 {"id": 41, "filename": "code.zip", "status": "queued", "failure_code": null, "error_message": null,
- "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
+ "failure_detail": null, "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
  "queue_position": 3, "created_at": "…", "started_at": null, "finished_at": null,
  "used": 4, "limit": 20, "remaining": 16}
 ```
@@ -130,7 +133,7 @@
 {"entries": [{"id": 41, "…": "위와 같음", "submitted_by": "Team 03"}], "used": 4, "limit": 20, "remaining": 16}
 ```
 
-`GET /submissions/{id}`: 자기 팀 제출 하나(상태 확인용). Private 점수는 참가자 응답 어디에도 없습니다.
+`GET /submissions/{id}`: 자기 팀 제출 하나(상태 확인용). 관리자는 모든 팀의 제출을 볼 수 있습니다. Private 점수는 참가자 응답 어디에도 없습니다.
 
 ### 횟수 규칙
 
@@ -138,6 +141,7 @@
 - **접수된 시점에 1회 사용**합니다(`counted: true`). 접수 단계에서 거절된 업로드는 사용하지 않습니다.
 - 채점 실패 시: ZIP 규격 위반(`zip_invalid`)과 서버 오류(`system_error`)는 항상 `counted: false`입니다. 나머지 실패는 1회 차감합니다(관리자 설정 `count_failed`, 기본 켜짐. 끄면 모든 실패가 미차감).
 - 같은 팀의 여러 계정이 동시에 올려도 팀 행을 잠그고 세므로 상한을 넘지 않습니다.
+- 다시 채점: 자동으로 미차감된 제출(`zip_invalid`·`system_error`, 또는 `count_failed`가 꺼져 있을 때의 실패)은 `counted: true`로 돌아가 결과에 따라 다시 판정합니다. 관리자가 횟수 복구로 `counted: false`로 만든 제출은 그대로입니다. 팀 한도는 확인하지 않습니다.
 
 ## 관리자
 
@@ -150,7 +154,7 @@
 | `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
 | `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
 | `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경 |
-| `POST /admin/users` `{"team_id","username"?}` | 계정 발급. `username`을 빼면 랜덤 10자리. 응답의 `temporary_password`는 **이때만** 나옴 |
+| `POST /admin/users` `{"team_id","username"?,"display_name"?}` | 계정 발급. `username`을 빼면 랜덤 10자리, `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴 |
 | `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급 |
 | `PATCH /admin/users/{id}` `{"banned"}` | 차단·해제 |
 | `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함 |
@@ -159,7 +163,7 @@
 | `GET /admin/files/{id}/download` | ZIP 내려받기(재현 심사용). 조작 기록에 남음 |
 | `POST /admin/files/{id}/delete` `{"reason"}` | ZIP 삭제. 기록은 남고 파일만 지움 |
 | `POST /admin/files/verify` | DB 기록과 디스크 비교. 아무것도 바꾸지 않음 |
-| `POST /admin/submissions/{id}/requeue` | 실패한 제출을 다시 채점 |
+| `POST /admin/submissions/{id}/requeue` | 실패한 제출을 다시 채점(저장된 ZIP이 있어야 함). `counted` 처리는 위 횟수 규칙 |
 | `PATCH /admin/submissions/{id}` `{"counted"}` | 제출 횟수 복구·차감 |
 | `POST /admin/leaderboard/recalculate` | 저장된 점수로 Public 순위 다시 만들기 |
 | `POST /admin/leaderboard/finalize` | 최종 순위 공개. 대회가 닫혀 있고 대기열이 비어야 함 |
