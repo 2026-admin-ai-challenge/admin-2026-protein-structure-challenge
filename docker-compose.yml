@@ -5,6 +5,7 @@ x-backend-env: &backend-env
   SUBMISSION_DIR: /srv/submissions
   # mock = fake scores for development. Real scoring: add docker-compose.evaluator.yml.
   EVALUATOR: mock
+  ZIP_RETENTION: ${ZIP_RETENTION:-best_public}
   MAX_ZIP_BYTES: ${MAX_ZIP_BYTES:-524288000}
   MAX_UNZIPPED_BYTES: ${MAX_UNZIPPED_BYTES:-2147483648}
   MAX_ZIP_ENTRIES: ${MAX_ZIP_ENTRIES:-2000}
@@ -63,7 +64,8 @@ services:
       <<: *backend-env
       MOCK_DELAY_SECONDS: ${MOCK_DELAY_SECONDS:-5}
     volumes:
-      - submissions:/srv/submissions:ro
+      # Worker removes obsolete ZIPs after the score transaction commits.
+      - submissions:/srv/submissions
     depends_on:
       api:
         condition: service_healthy

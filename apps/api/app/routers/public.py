@@ -10,6 +10,7 @@ from ..leaderboard import listing
 from ..models import Settings, Submission, User
 from ..security import optional_user
 from .common import dataset_available, evaluator_name, launched, limits_view, settings_view, submission_open
+from ..config import ZIP_RETENTION
 
 router = APIRouter(prefix="/api")
 
@@ -32,6 +33,7 @@ def competition(db=Depends(get_db)):
         "dataset": public_metadata() if available else None,
         "limits": limits_view(settings),
         "evaluator": evaluator_name(),
+        "zip_retention": ZIP_RETENTION,
         "teams": db.scalar(select(func.count(func.distinct(User.team_id))).where(User.role == "USER", User.banned.is_(False))),
         "submissions": db.scalar(select(func.count(Submission.id)).where(Submission.status == "succeeded")),
     }

@@ -18,7 +18,7 @@ from datetime import timedelta
 
 from sqlalchemy import select, update
 
-from . import storage
+from . import files, storage
 from .config import EVALUATOR, WORKER_STALE_SECONDS as STALE_SECONDS
 from .db import SessionLocal
 from .errors import FAILURES, UNCOUNTED_FAILURES
@@ -117,7 +117,9 @@ def finish(db, submission_id, worker_id, outcome, evaluator_name):
         row.public_score = row.private_score = row.predictions = None
         if outcome.failure_code in UNCOUNTED_FAILURES or not settings.count_failed:
             row.counted = False
+    files.mark_unneeded(db, settings, row.team_id)
     db.commit()
+    files.purge_deleted(db)
     return row
 
 
@@ -194,6 +196,10 @@ def run_forever(once=False):
                     except Exception as error:
                         ok, detail = False, f"hidden labels unavailable: {error}"
                 recover_stale(db)
+                settings = db.scalar(select(Settings).where(Settings.id == 1).with_for_update())
+                files.mark_unneeded(db, settings)
+                db.commit()
+                files.purge_deleted(db)
                 handled = process_one(db, evaluator, worker_id) if ok else None
                 report(db, worker_id, ok, detail)
                 if not ok:
