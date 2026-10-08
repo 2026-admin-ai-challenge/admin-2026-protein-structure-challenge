@@ -4,10 +4,9 @@ import logging
 
 from sqlalchemy import func, select
 
-from . import storage
+from . import leaderboard, storage
 from .config import EVALUATOR, SUBMISSION_DIR, ZIP_RETENTION
 from .audit import record
-from .leaderboard import _moment
 from .dataset import hash_file
 from .models import LeaderboardEntry, Submission, SubmissionFile, now
 
@@ -19,7 +18,8 @@ def best_public_id(db, team_id):
         Submission.team_id == team_id, Submission.status == "succeeded",
         Submission.evaluator == EVALUATOR, Submission.public_score.is_not(None),
     )).all()
-    return min(rows, key=lambda s: (-s.public_score, _moment(s), s.id)).id if rows else None
+    best = leaderboard.best_of(rows)
+    return best.id if best else None
 
 
 def mark_unneeded(db, settings, team_id=None):
@@ -40,9 +40,9 @@ def mark_unneeded(db, settings, team_id=None):
     protected = ranked_submission_ids(db)
     for rows in teams.values():
         for field in (["public_score", "private_score"] if settings.final_selection == "best_private" else ["public_score"]):
-            candidates = [s for s in rows if getattr(s, field) is not None]
-            if candidates:
-                protected.add(min(candidates, key=lambda s: (-getattr(s, field), _moment(s), s.id)).id)
+            best = leaderboard.best_of(rows, field)
+            if best:
+                protected.add(best.id)
     query = select(SubmissionFile, Submission).join(Submission, Submission.id == SubmissionFile.submission_id).where(
         SubmissionFile.deleted_at.is_(None), Submission.status.in_(["succeeded", "failed"]),
     )

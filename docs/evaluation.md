@@ -27,7 +27,7 @@ UTF-8(BOM 허용) CSV, 컬럼은 순서대로 `id,label`. 빈 값, 추가 열, �
 
 - **Public 순위**: 팀별 최고 Public 점수. 자동으로 가장 높은 점수를 씁니다.
 - **동점**: 점수가 기록된 시각이 빠른 팀, 그다음 접수 ID가 작은 쪽. 표시는 5자리, 순위 계산은 전체 정밀도.
-- **최종 순위**: 관리자 설정 `final_selection`을 따릅니다. `best_public`(기본, 권장안)은 팀의 Public 최고 제출물이 받은 Private 점수, `best_private`는 팀의 Private 최고 점수입니다. **운영진 확정 전**이므로 참가자 화면에는 "추후 공지"로 표시합니다.
+- **최종 순위**: 팀의 Public 최고 제출물(위 동점 기준으로 고른 1개)이 받은 Private 점수입니다. 운영진이 확정한 규칙이며 관리자 설정 `final_selection=best_public`(기본값)에 해당합니다. `best_private`(팀의 Private 최고 점수)는 쓰지 않습니다.
 
 ## 제출 횟수
 
