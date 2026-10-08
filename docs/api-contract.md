@@ -42,7 +42,7 @@
 | `timeout` | 추론이 제한 시간을 넘김 | 〃 |
 | `out_of_memory` | 메모리 한도 초과로 종료 | 〃 |
 | `output_missing` | 예측 파일이 없음 | 〃 |
-| `output_invalid` | 예측 파일 형식·ID·라벨 오류, 출력 크기 초과. `error_message`에 검증기 오류 코드(`[E401]` 등)와 건수 | 〃 |
+| `output_invalid` | 예측 파일 형식·ID·라벨 오류, 출력 크기 초과. `error_message`에 검증기 오류 코드(`[E401]` 등)·메시지·건수·고정 해결 안내 | 〃 |
 | `system_error` | 채점 서버 쪽 장애 | **항상 차감 없음** |
 
 `error_message`는 참가자에게 보여도 되는 문장만 담습니다. 컨테이너 출력(`log_tail`)은 **관리자 API에서만** 나갑니다. 추론 코드가 숨긴 평가 입력을 오류 메시지로 빼내는 것을 막기 위해서입니다.
@@ -86,10 +86,11 @@
                "team_submission_limit": 20, "frozen": false, "finalized": false},
   "submission_open": true,
   "dataset_available": true,
-  "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21545, "bytes": 0}}},
-  "limits": {"zip_bytes": 524288000, "inference_seconds": 600, "team_submissions": 10,
+  "dataset": {"version": "…", "labels": ["1.10", "…"], "stats": {"…": 0}, "files": {"train.csv": {"rows": 21339, "bytes": 0}}},
+  "limits": {"zip_bytes": 524288000, "inference_seconds": 600, "team_submissions": 20,
              "required_entries": ["inference.py", "train.py", "requirements.txt", "model/"]},
   "evaluator": "mock",
+  "zip_retention": "best_public",
   "teams": 10,
   "submissions": 37
 }
@@ -98,7 +99,7 @@
 - `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
-- 미확정 정책(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다.
+- 운영 설정(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다. 확정된 제출 차감 기준을 적용하려면 관리자 설정 `count_failed`를 켜 둡니다.
 - 대회 이름(`title`)도 넣지 않습니다. 이름에 대회 주제가 드러나는데, 이 응답은 대회 시작 전에도 누구나 받기 때문입니다.
 
 `GET /leaderboard?board=public|final`
@@ -120,13 +121,13 @@
 {"id": 41, "filename": "code.zip", "status": "queued", "failure_code": null, "error_message": null,
  "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
  "queue_position": 3, "created_at": "…", "started_at": null, "finished_at": null,
- "used": 4, "limit": 10, "remaining": 6}
+ "used": 4, "limit": 20, "remaining": 16}
 ```
 
 `GET /submissions/me`: 로그인한 계정의 **팀 전체** 제출과 남은 횟수.
 
 ```json
-{"entries": [{"id": 41, "…": "위와 같음", "submitted_by": "Team 03"}], "used": 4, "limit": 10, "remaining": 6}
+{"entries": [{"id": 41, "…": "위와 같음", "submitted_by": "Team 03"}], "used": 4, "limit": 20, "remaining": 16}
 ```
 
 `GET /submissions/{id}`: 자기 팀 제출 하나(상태 확인용). Private 점수는 참가자 응답 어디에도 없습니다.
@@ -199,7 +200,7 @@ code.zip
 ```
 
 - 필수 항목은 **ZIP 최상위**에 있어야 합니다. 목록은 환경변수 `ZIP_REQUIRED`.
-- 압축 ZIP 최대 500 MB(`MAX_ZIP_BYTES`, 확정). 해제 후 합계 2 GiB, 항목 2,000개(`MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, 임시).
+- 압축 ZIP은 공지상 최대 500 MB이며 현재 `MAX_ZIP_BYTES` 기본값은 524,288,000 bytes(500 MiB)입니다. 정확한 접수 한도는 API의 `limits.zip_bytes`를 따릅니다. 해제 후 합계 2 GiB, 항목 2,000개(`MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, 임시).
 - 거절: 절대 경로, `..`, 심볼릭 링크·특수 파일, 같은 경로 중복, 암호화.
 - `requirements.txt` 검사(`app/packages.py`): 패키지 종류와 버전은 제한하지 않습니다. pip이 인덱스 밖에서 무언가를 가져오게 하는 줄(`-r`·`-c`·`-e`, 경로·URL)과 알 수 없는 옵션만 `422 zip_invalid`로 거절합니다. 인덱스 옵션과 `--hash`는 무시하고, Linux 컨테이너에 해당하지 않는 환경 표시(`; sys_platform == "win32"`) 줄은 건너뜁니다. 같은 패키지 줄은 버전 조건을 합치고, `+cu128` 같은 로컬 버전 표시는 지웁니다. 최대 64 KB·300개, UTF-8 또는 UTF-16(BOM). pip에는 원문이 아니라 `packaging`이 다시 쓴 요구사항만 넘깁니다.
 

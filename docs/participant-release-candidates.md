@@ -32,11 +32,11 @@ ADMIN_2026_RELEASE/
 
 ### 현재 data/의 구조 ZIP 확인
 
-현재 로컬 `admin-2026-protein-data/data/`에서 다음 파일의 존재와 ZIP 무결성, 대응 CSV의 ID 일치를 확인했습니다(2026-10-07). 아래는 현재 산출물이며, 위 트리는 향후 배포 후보입니다.
+데이터 저장소 PR #13의 버전 `23760e7` 기준 학습은 21,339건, 평가는 5,330건입니다. 아래 건수·형식은 병합된 데이터 보고서를 기준으로 갱신했으며, 이 문서 수정이 로컬 운영 폴더나 최종 ZIP을 새로 검증했다는 뜻은 아닙니다. 배포 전 같은 버전의 manifest·해시와 CSV/ZIP의 ID 대응을 확인합니다. 위 트리는 향후 배포 후보입니다.
 
 | 실제 경로 | 확인 결과와 배포 범위 |
 | --- | --- |
-| `data/public/train_structures.zip` | 학습 CSV와 ID가 일치하는 NPZ 21,536개가 있습니다. 공개 학습 구조 파일로 사용합니다. |
+| `data/public/train_structures.zip` | 학습 CSV와 ID가 일치하는 NPZ 21,339개가 있습니다. 공개 학습 구조 파일로 사용합니다. |
 | `data/public/example_structures.zip` | 공개 예제 입력 CSV와 ID가 일치하는 NPZ 3개가 있습니다. 현재 공개 예제 구조 파일입니다. |
 | `data/private/test_structures.zip` | 실제 숨긴 평가 구조 파일이 존재하며 평가 CSV와 ID가 일치합니다. 서버 전용으로 유지하고 공개 배포에는 포함하지 않습니다. |
 
@@ -59,7 +59,7 @@ ADMIN_2026_RELEASE/
 | `starter_kit/` | 공개 예제로 학습·추론·출력 형식을 연습하도록 최소 코드를 묶습니다. 참가자가 제출하는 ZIP 자체와는 구분합니다. |
 | `starter_kit/inference.py` | 저장된 모델·전처리 객체를 로드하고 입력으로부터 `id,label` 예측을 생성하는 서버 인터페이스 예제입니다. 평가 중 재학습하지 않습니다. |
 | `starter_kit/train.py` | 참가자 로컬에서 베이스라인을 학습·저장하고 재현하는 예제입니다. 현재 제출 규격에서도 필수지만 채점 때 실행하지 않습니다. |
-| `starter_kit/requirements.txt` | 예제 코드의 사용 패키지 명세입니다. 참가자는 자신의 모델에 맞게 작성하되 공식 지원 환경과 일치시킵니다. 서버에서 이를 읽어 패키지를 설치하지 않습니다. |
+| `starter_kit/requirements.txt` | 예제·제출 코드가 사용하는 패키지 명세입니다. 서버는 제출 requirements.txt를 검사한 뒤 추론 전에 별도 환경에 설치합니다. 기본 패키지와 89개 고정 목록의 wheel을 우선 사용하고, 부족하면 PyPI에서 Linux·Python 3.12용 wheel을 받습니다. 추론 중 설치·인터넷은 허용하지 않습니다. |
 | `starter_kit/sample_input/` | 실제 평가 입력과 같은 형식을 가진 **공개 실행 점검용 입력**만 모읍니다. |
 | `sample_input/sample_features.csv` | 특징 CSV 경로를 받는 `--input` 인자와 31개 특징 처리 흐름을 점검합니다. |
 | `sample_input/sample.csv` | 공개 샘플의 `id,sequence`를 제공해 서열을 사용하는 모델도 입력을 시험할 수 있게 합니다. 평가 입력처럼 정답 열은 넣지 않습니다. |
@@ -113,18 +113,18 @@ python inference.py --input sample_input/sample_features.csv --output sample_pre
 
 ## 5. supported_packages.txt 공개 원칙
 
-`supported_packages.txt`는 참가자가 저장된 모델을 실제 채점 환경에서 불러와 추론할 수 있도록 제공하는 **공식 지원 명세**입니다. 참가자 로컬의 `pip freeze` 전체, 웹/API 서버의 의존성, 학습 전용 도구 목록을 그대로 옮기는 파일이 아닙니다. `requirements.txt`는 제출 코드의 사용 명세이고, `supported_packages.txt`는 운영진이 보장하는 채점 환경의 명세입니다.
+`supported_packages.txt`는 참가자가 저장된 모델을 실제 채점 환경에서 불러와 추론할 수 있도록 제공하는 **공식 지원 명세**입니다. 참가자 로컬의 `pip freeze` 전체, 웹/API 서버의 의존성, 학습 전용 도구 목록을 그대로 옮기는 파일이 아닙니다. `requirements.txt`는 제출별 설치 요구사항이고, `supported_packages.txt`는 운영진이 실제 이미지와 모델로 검증한 환경 명세입니다. 기본 설치 패키지, 이미지에 받아만 둔 89개 목록의 wheel, 목록 밖 PyPI 설치 허용 범위를 구분해 설명합니다. wheel을 받아 둔 것만으로 전체 패키지의 import·모델 추론 검증 완료라고 표시하지 않습니다.
 
 **실제 대회에 사용할 evaluator Docker 이미지에서 검증 완료한 패키지와 버전만 공개합니다.** 필요한 패키지라는 의견이나 requirements에 적힌 버전만으로 공식 지원이라고 표시하지 않습니다. 공개 전 다음을 완료합니다.
 
-1. 데이터·평가팀이 추론에 필요한 패키지 목록을 합의하고 실제 evaluator 이미지를 빌드합니다.
-2. 그 이미지 안에서 Python의 정확한 버전과 설치된 패키지 버전을 확인하고, 지원 패키지 import 및 저장 모델 로드·예측을 검증합니다. 추가 ML/DL 라이브러리는 해당 라이브러리의 모델로 점검합니다.
+1. 현재 [기본 패키지](../apps/evaluator/requirements.txt)와 [89개 wheel 목록](../apps/evaluator/requirements-competition.lock.txt)을 확인하고 실제 evaluator 이미지를 빌드합니다.
+2. 이미지의 Python·기본 설치 패키지 버전을 확인하고, 제출 requirements.txt의 추가 패키지 설치부터 import·저장 모델 로드·예측까지 검증합니다. 오프라인 wheel 설치와 온라인 PyPI 설치 경로를 각각 점검합니다.
 3. 운영과 같은 네트워크 차단·읽기 전용·사용자·자원 제한으로 Starter Kit 추론을 실행하고 `id,label` 출력을 검증합니다. 실제 평가 입력을 사용하는 확인은 운영진 내부에서만 수행합니다.
 4. 검증한 이미지 태그와 digest, 검증일·결과를 기록하고 그 환경과 일치하는 명세를 배포합니다. 이미지 변경 시 재검증하고 명세 버전도 갱신합니다.
 
-하위 의존성은 이미지에 포함될 수 있으나 참가자에게 직접 사용을 보장할 패키지와 구분합니다. 재현용 전체 설치 목록은 별도로 기록하되, 공식 지원 표기는 검증 근거가 있는 항목만 합니다. 서버는 인터넷 접속·패키지 설치·학습을 허용하지 않으며, 지원 목록에 없는 패키지를 제출 `requirements.txt`에 추가해도 설치되지 않습니다.
+하위 의존성은 이미지에 포함될 수 있으나 참가자에게 직접 사용을 보장할 패키지와 구분합니다. 재현용 전체 설치 목록은 별도로 기록하되, 공식 지원 표기는 검증 근거가 있는 항목만 합니다. 추론은 네트워크 없이 실행하고 학습·실행 중 설치를 허용하지 않습니다. 추론 전 별도 설치 컨테이너는 제출·평가 입력을 마운트하지 않고 wheel만 설치합니다. 이미지 목록에 없는 패키지·버전도 PyPI에 Linux·Python 3.12용 wheel이 있으면 설치할 수 있습니다. 설치 실패는 `install_failed`, PyPI 연결 실패·설치 시간 초과·Docker 오류는 현재 구현상 `system_error`로 처리하며 [차감 기준](evaluation.md)을 따릅니다.
 
-**확정 전 체크사항:** [evaluator Dockerfile](../apps/evaluator/Dockerfile)과 [requirements](../apps/evaluator/requirements.txt)는 초안으로 표시되어 있습니다. `FROM python:3.12.14-slim`으로 Python 패치 버전은 고정했지만, 이 이미지에서 지원 패키지·실제 모델 검증을 마치기 전에는 해당 버전을 공식 지원값으로 공지하면 안 됩니다. [검증 기록](validation.md)의 데모 격리 평가 성공은 현재 전체 패키지·실제 모델의 검증 완료 증거가 아닙니다. 이 문서는 패키지나 버전을 공식 지원값으로 새로 확정하지 않습니다.
+**배포 전 체크사항:** 웹 PR #14·#15가 병합돼 [evaluator Dockerfile](../apps/evaluator/Dockerfile)은 Python 3.12.14와 제출별 패키지 설치를 구현합니다. 코드의 고정값과 실제 운영 이미지 검증 완료는 구분합니다. 최신 이미지를 빌드하고 지원 패키지·실제 모델을 검증한 뒤 이미지 digest와 결과를 명세에 기록합니다. [과거 검증 기록](validation.md)의 데모 성공은 현재 전체 패키지·실제 모델 검증을 대신하지 않습니다.
 
 ## 6. 권장 다운로드: ZIP 두 개
 
@@ -146,7 +146,7 @@ python inference.py --input sample_input/sample_features.csv --output sample_pre
 | sample/test 입력 이름 | 현재 계약·[Docker 평가기](../apps/api/app/evaluators/docker.py)는 서버의 `test.*` 이름을 사용합니다. | 4절에 따라 서열·구조 입력 이름 매핑을 합의하고 동일 코드의 로컬 샘플 추론과 서버 추론을 확인합니다. |
 | 두 ZIP 다운로드 | 현재 API·화면은 세 학습 파일, 검증 분할, 예제를 개별 다운로드합니다. 두 ZIP 경로는 아직 없습니다. | 데이터팀의 ZIP 생성과 웹팀의 허용 목록·메타데이터·버전/해시·승인/잠금·화면·API 계약을 함께 갱신합니다. |
 | 코드 전용 사전 배포 | [public 라우터](../apps/api/app/routers/public.py)의 `/resources/baseline`은 `baseline_code.zip`을 별도로 제공하고, 시작 전 일반 참가자에게는 차단합니다. [DataPanel](../apps/web/app/components/DataPanel.tsx)의 ‘미리 받기’ 표현 및 [과거 검증 기록](validation.md)의 사전 공개 설명과 차이가 있습니다. | 코드 전용 묶음을 두 다운로드에 통합할지, 별도 예외로 유지할지와 공개 시점을 정하고 안내를 맞춥니다. sample이 든 Starter Kit을 자동으로 사전 공개하지 않습니다. |
-| 패키지·Python 버전 | evaluator 명세는 초안입니다. Python은 3.12.14로 고정했지만 이 버전으로 지원 패키지·실제 모델을 검증한 근거는 아직 없습니다. | 실제 이미지 빌드·모델 추론 검증 근거를 확보한 후 `supported_packages.txt`를 확정합니다. API 컨테이너 테스트 통과를 evaluator 검증으로 대신하지 않습니다. |
+| 패키지·Python 버전 | Python 3.12.14·기본 패키지·89개 wheel 목록·추론 전 제출별 설치가 코드에 반영됐습니다. 최신 운영 이미지의 빌드·모델별 검증 완료는 별도 확인이 필요합니다. | 실제 이미지 빌드·모델 추론 검증 근거를 확보한 후 `supported_packages.txt`를 확정합니다. API 컨테이너 테스트 통과를 evaluator 검증으로 대신하지 않습니다. |
 | 구조·샘플·출력 스키마 | 계약은 구조 NPZ와 특징 31개를 사용하며 예측은 `id,label`, label은 문자열입니다. | 학습·샘플·서버 입력의 컬럼·NPZ 키·ID 대응을 데이터팀과 확인하고, 소량 공개 예제로 모델 로드부터 출력 검증까지 실행합니다. |
 
 배포 확정은 위 차이를 해소하고, 허용 목록대로 만든 두 ZIP에 비공개 자료가 없는지 확인한 뒤 진행합니다. 공개 데이터 파일을 Git에 올리지 않는다는 README의 원칙도 유지합니다.

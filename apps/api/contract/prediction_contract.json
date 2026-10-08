@@ -67,14 +67,11 @@
     "split_status": "CONFIRMED",
     "split_source": "cb2f530 reference Public/Private partitions preserved after exclusions; nominal 30/70, no rebalance",
     "partition_source": "data/private/labels.csv 의 partition 컬럼",
-    "final_rank_rule_status": "TEMP",
-    "final_rank_question": "Q7 — 최종 순위에 쓸 제출물 선택 방식"
+    "final_rank_rule_status": "CONFIRMED",
+    "final_rank_rule": "팀별 최고 Public 제출물 1개의 Private 점수로 최종 순위를 정한다(final_selection=best_public)."
   },
   "undecided": {
     "Q2": "제출 ZIP 진입점·출력 경로·입출력 형식 고정값. output.path 가 여기에 달려 있다.",
-    "Q7": "최종 순위 제출물 선택 방식.",
-    "doc_conflict_1": "제출 ZIP 압축 크기 — 디렉팅 문서 '초기 제안 200 MiB' vs 팀별 과제 문서 '확정 500 MB'. 상충.",
-    "doc_conflict_2": "ZIP 구성 — 6일 계획 inference.py/requirements.txt/model/ vs 디렉팅 문서 inference.py/model/submission.json. 상충.",
     "open_1": "예측 파일이 CSV 외 형식도 허용되는지. 현재는 CSV 단일로 가정.",
     "open_2": "확률·점수 컬럼 제출 허용 여부. 현재는 label 단일 컬럼만 허용.",
     "open_3": "출력 디렉터리에 예측 파일 외 산출물을 남겨도 되는지."
@@ -103,10 +100,12 @@
     "drift_guard": "작업자 시작 시 verify_contract_against_dataset() 를 호출한다. 어긋나면 E903. 제출 검증 경로에서는 보지 않는다 (평가 ID 일부만 주입하는 호출이 정당하므로)."
   },
   "decided": {
-    "Q4": "형식 오류는 팀당 제출 횟수(20회)에서 차감하지 않는다. 웹 저장소 PR #6.",
+    "Q4": "ZIP 규격 위반(zip_invalid)과 서버 오류(system_error)만 제출 횟수에서 제외한다. 예측 출력 형식 오류(output_invalid)를 포함한 나머지 채점 실패는 1회 차감한다. 대회 운영 시 count_failed=True를 유지한다. 웹 저장소 PR #6 및 운영진 확정 기준.",
     "Q8": "클래스 20개는 metadata.json 의 labels 를 주입해 사용한다.",
     "submission_limit": "대회 전체 팀당 20회. 웹 저장소 PR #7 (10회에서 상향).",
-    "dataset_availability": "데이터셋이 저장소에 커밋돼 실데이터 검증이 가능하다."
+    "dataset_availability": "데이터셋이 저장소에 커밋돼 실데이터 검증이 가능하다.",
+    "Q7": "최종 순위는 팀별 최고 Public 제출물의 Private 점수. 웹 저장소 PR #18.",
+    "zip_size": "압축 ZIP 500 MB로 공지하며 현재 MAX_ZIP_BYTES 기본값은 524288000 bytes. 해제 후 2 GiB·2000개 항목은 임시 구현 상한(Q3)."
   },
   "docs": {
     "contract": "docs/prediction-contract.md",

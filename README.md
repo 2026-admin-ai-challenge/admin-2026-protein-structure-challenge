@@ -7,7 +7,7 @@
 - 이 저장소: 웹사이트, 인증, DB, 제출 접수, 채점 대기열과 격리 추론, 운영 화면, Docker 배포
 - [`admin-2026-protein-data`](https://github.com/2026-admin-ai-challenge/admin-2026-protein-data): CATH 다운로드·정제·분할·검증, 31개 특징, 베이스라인, 참가자 배포용 파일 생성
 
-생성된 데이터, 원본 CATH 파일, 숨긴 정답과 분할표, 참가자 계정 시트는 **어느 Git 저장소에도 올리지 않습니다.**
+이 웹 저장소에는 생성 데이터, 원본 CATH 파일, 숨긴 정답·분할표, 참가자 계정 시트를 커밋하지 않습니다. 데이터 저장소는 운영진 전용 비공개 저장소로 생성 데이터와 평가 정답·정책 파일을 관리합니다. 두 저장소를 참가자에게 공유하거나 공개 전환하지 않습니다.
 
 ## 대회 방식과 구현 상태
 
@@ -27,7 +27,7 @@
 | Docker 격리 평가기(네트워크 차단, 10분 제한) | 구현. **입출력 계약은 임시**이며 데이터팀과 확정 필요 |
 | 관리자 화면(계정, 대기열, 실패, 데이터 승인, 조작 기록) | 구현 |
 
-실제 대회 데이터와 확정된 추론 계약이 들어오기 전까지 결과는 **mock 기반 개발 완료**입니다. 화면과 관리자 페이지에 mock 모드임이 표시됩니다. 미확정 운영 규칙(실패 제출 차감, 해제 후 용량)은 설정값으로 뒀습니다. 최종 순위 제출물은 Public 최고 제출물로 확정됐습니다(`final_selection=best_public`, 기본값). 팀별 업무와 미결정 질문은 [팀별 남은 과제와 문의사항](ADMIN_팀별_남은_과제와_문의사항.md)을 보세요.
+mock과 Docker 평가기가 모두 구현돼 있습니다. 기본 개발 스택은 mock이며, 실제 채점은 evaluator compose와 준비된 데이터·이미지를 사용합니다. 코드 병합은 운영 서버 배포나 최종 리허설 완료를 뜻하지 않습니다. 실행 중인 평가기는 API와 화면의 `evaluator` 표시로 확인합니다. 압축 해제 후 용량은 미확정 설정값으로 뒀습니다. 제출 차감은 ZIP 규격 위반·서버 오류만 제외하고 나머지 채점 실패는 1회 차감하는 것으로 확정됐습니다. 대회 운영 시 실패 제출 차감(`count_failed`)을 켜 둡니다. 최종 순위 제출물은 Public 최고 제출물로 확정됐습니다(`final_selection=best_public`, 기본값). 팀별 업무와 미결정 질문은 [팀별 남은 과제와 문의사항](ADMIN_팀별_남은_과제와_문의사항.md)을 보세요.
 
 ## 실행 (개발: mock 채점)
 
@@ -99,6 +99,7 @@ docker compose exec api python -m app.create_admin
 - **서버 탓으로 실패한 제출**: 원인을 고친 뒤 **다시 채점**을 누릅니다. 서버 오류(`system_error`)는 제출 횟수를 차감하지 않습니다.
 - **제출 횟수 돌려주기**: 해당 제출의 **횟수 복구**를 누릅니다.
 - **제출 ZIP 확인**: **ZIP 받기**로 내려받습니다(재현 심사용, 조작 기록에 남음).
+- **ZIP 자동 보관**: 기본 `ZIP_RETENTION=best_public`은 팀 최고 Public 제출과 채점 중·서버 오류·리더보드 참조 ZIP 등을 보존하고 나머지 완료 ZIP을 정리합니다. 기존 완료 제출에도 적용됩니다. 삭제된 ZIP은 복구하거나 재추론할 수 없습니다. 전체 보관이 필요하면 API·worker에 `keep_all`을 동일하게 설정합니다.
 - **디스크 정리**: **파일 삭제**를 누르고 사유를 적습니다. 점수와 기록은 남고 파일만 지워집니다. 순위에 반영된 제출과 채점 중인 제출은 삭제할 수 없습니다.
 
 ### 5. 대회 종료
@@ -139,6 +140,8 @@ docker build -t admin-evaluator:latest apps/evaluator
 docker compose -f docker-compose.yml -f docker-compose.evaluator.yml up --build -d
 ```
 
+제출 requirements.txt의 패키지는 추론 전에 제출 전용 환경에 설치합니다. 이미지의 wheel을 네트워크 없이 먼저 사용하고, 부족하면 별도 설치 컨테이너가 PyPI에 접속합니다. 추론 컨테이너는 계속 네트워크가 차단됩니다. 채점 이미지 변경 후에는 다시 빌드하고 실제 모델로 검증합니다.
+
 worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨테이너에는 주지 않습니다. 자세한 절차는 [배포·운영 문서](docs/deployment.md)에 있습니다.
 
 ## 코드 위치
@@ -146,11 +149,11 @@ worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨�
 - `apps/web/app/`: 화면. `components/`(참가자 패널), `components/admin/`(관리자 섹션), `lib/api.ts`(API 호출)
 - `apps/api/app/routers/`: `auth`, `public`, `submissions`, `admin`
 - `apps/api/app/worker.py`, `evaluators/`: 채점 작업자와 평가기(mock, docker)
-- `apps/api/prediction_validator/`, `contract/`: 데이터팀 예측 파일 검증기와 계약(복사본, 여기서 수정하지 않음). `app/scoring/`에서 호출
+- `apps/api/prediction_validator/`, `contract/`: 데이터팀 예측 파일 검증기와 계약 사본. 검증기 구현은 원본과 동기화하고, 웹 운영 정책 문구는 `prediction_validator/README.md`의 사본 관리 기준으로 대조합니다. `app/scoring/`에서 호출
 - `apps/api/app/zipcheck.py`, `storage.py`, `files.py`: ZIP 검사, 비공개 저장, 파일 기록(`submission_files`) 관리
 - `apps/api/app/accounts.py`: 계정 발급과 시트 동기화
 - `apps/api/migrations/`: DB 스키마
-- `apps/evaluator/`: 고정 채점 이미지 초안
+- `apps/evaluator/`: 기본 패키지·89개 목록의 wheel·제출별 패키지 설치 스크립트를 담은 채점 이미지
 - `deploy/nginx.conf`: 입구 프록시 설정
 - `scripts/`: PostgreSQL 통합 점검, 데모 자료 생성
 
