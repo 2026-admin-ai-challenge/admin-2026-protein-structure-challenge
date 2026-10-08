@@ -27,7 +27,7 @@
 | Docker 격리 평가기(네트워크 차단, 10분 제한) | 구현. **입출력 계약은 임시**이며 데이터팀과 확정 필요 |
 | 관리자 화면(계정, 대기열, 실패, 데이터 승인, 조작 기록) | 구현 |
 
-mock과 Docker 평가기가 모두 구현돼 있습니다. 기본 개발 스택은 mock이며, 실제 채점은 evaluator compose와 준비된 데이터·이미지를 사용합니다. 코드 병합은 운영 서버 배포나 최종 리허설 완료를 뜻하지 않습니다. 실행 중인 평가기는 API와 화면의 `evaluator` 표시로 확인합니다. 압축 해제 후 용량은 미확정 설정값으로 뒀습니다. 제출 차감은 ZIP 규격 위반·서버 오류만 제외하고 나머지 채점 실패는 1회 차감하는 것으로 확정됐습니다. 대회 운영 시 실패 제출 차감(`count_failed`)을 켜 둡니다. 최종 순위 제출물은 Public 최고 제출물로 확정됐습니다(`final_selection=best_public`, 기본값). 팀별 업무와 미결정 질문은 [팀별 남은 과제와 문의사항](ADMIN_팀별_남은_과제와_문의사항.md)을 보세요.
+mock과 Docker 평가기가 모두 구현돼 있습니다. 기본 개발 스택은 mock이며, 실제 채점은 evaluator compose와 준비된 데이터·이미지를 사용합니다. main에 머지하면 GitHub Actions가 웹 서버에 자동 배포합니다([CI 자동 배포](docs/deployment.md#ci-자동-배포)). 이 배포는 mock 평가기로 실행되며 실채점 장비 배포나 최종 리허설 완료를 뜻하지 않습니다. 실행 중인 평가기는 API와 화면의 `evaluator` 표시로 확인합니다. 압축 해제 후 용량은 미확정 설정값으로 뒀습니다. 제출 차감은 ZIP 규격 위반·서버 오류만 제외하고 나머지 채점 실패는 1회 차감하는 것으로 확정됐습니다. 대회 운영 시 실패 제출 차감(`count_failed`)을 켜 둡니다. 최종 순위 제출물은 Public 최고 제출물로 확정됐습니다(`final_selection=best_public`, 기본값). 팀별 업무와 미결정 질문은 [팀별 남은 과제와 문의사항](ADMIN_팀별_남은_과제와_문의사항.md)을 보세요.
 
 ## 실행 (개발: mock 채점)
 
@@ -56,7 +56,12 @@ team_name,username,password,display_name
 Team 01,k7m2xq9rtd,임시비밀번호,Team 01
 ```
 
-- 새로 만들기: `python -m app.generate_accounts --count 10 --out accounts/participants.csv` (랜덤 10자리 아이디, 12자리 임시 비밀번호)
+- 새로 만들기: api 컨테이너 안에서 만든 뒤 꺼내고, 컨테이너 사본은 지웁니다(랜덤 10자리 아이디, 12자리 임시 비밀번호). `docker compose cp`는 같은 이름의 시트를 덮어쓰므로 기존 시트가 있으면 먼저 옮겨 둡니다.
+  ```bash
+  docker compose exec api python -m app.generate_accounts --count 10 --out /tmp/participants.csv
+  docker compose cp api:/tmp/participants.csv accounts/participants.csv
+  docker compose exec api rm /tmp/participants.csv
+  ```
 - 수정 반영: 시트를 고친 뒤 `sync_accounts`를 다시 실행합니다. 팀 이름·비밀번호 변경, 계정 추가가 반영됩니다.
 - 시트에 없는 참가자 계정까지 막으려면 `--exclusive`를 붙입니다.
 - DB에는 비밀번호 해시만 저장됩니다. 관리자 화면에서도 팀·계정 발급, 비밀번호 재설정, 차단을 할 수 있습니다.

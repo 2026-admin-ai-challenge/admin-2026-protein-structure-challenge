@@ -77,7 +77,7 @@
 - [ ] **웹/API·운영** 채점 이미지를 새로 빌드해 `admin-evaluator:latest`로 교체한다(`docker build -t admin-evaluator:latest apps/evaluator`). 설치 스크립트가 없는 예전 이미지면 worker가 "준비 안 됨: rebuild"를 표시하고 채점하지 않는다.
 - [ ] **운영** 채점 컴퓨터가 `pypi.org`, `files.pythonhosted.org`, `download.pytorch.org`에 접속할 수 있는지 확인한다. 막혀 있으면 목록 밖 패키지를 쓰는 제출이 `system_error`로 멈춘다.
 - [ ] **운영·웹/API** 온라인 설치 컨테이너는 기본 bridge 네트워크라 PyPI뿐 아니라 내부망에도 닿을 수 있다. 실행되는 것은 pip뿐이지만, 필요하면 외부 인터넷만 허용하는 네트워크로 좁힌다.
-- [ ] **웹/API** `fix/eval-input-check`를 머지할 때 `apps/api/app/evaluators/docker.py`의 `ready()` 충돌을 해결한다. `fix/evaluator-boosting-packages`의 내용(libgomp1, xgboost-cpu)은 이 브랜치에 들어 있으므로 확인 후 닫는다.
+- [ ] **웹/API** `fix/eval-input-check`(평가 입력 사본 검사)는 아직 로컬 브랜치에만 있다. 최신 main에 맞춰 `apps/api/app/evaluators/docker.py`의 `ready()` 충돌을 해결한 뒤 push·PR한다. `fix/evaluator-boosting-packages`의 내용(libgomp1, xgboost-cpu)은 PR #15로 이미 main에 반영돼 그 원격 브랜치는 닫아도 된다.
 - [ ] **운영** 참가자 공지: 패키지 설치에 실패하면(없는 패키지, Linux용 wheel 없음, 버전 충돌) `install_failed`로 횟수가 차감된다. 목록의 버전을 쓰면 설치가 빠르다는 점도 알린다.
 - [ ] **운영** GPU 서버에서 `pip freeze`로 만든 파일의 `nvidia-*`, `triton`도 일단 그대로 받아 설치하기로 했다(2026-10-07). 수 GB라 설치 시간 제한(600초)에 걸려 `system_error`가 잦으면 건너뛰는 방안을 다시 검토한다.
 - [ ] **데이터** 스타터킷·베이스라인 `requirements.txt`의 `jupyterlab`은 추론에 필요 없고 PyPI에서 받느라 느리므로 뺀다.
