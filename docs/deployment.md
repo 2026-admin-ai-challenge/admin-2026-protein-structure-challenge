@@ -85,7 +85,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 | `EVAL_PIP_CACHE_VOLUME` | `admin-eval-pip-cache` | PyPI에서 받은 파일의 공유 캐시 볼륨. 빈 값이면 캐시 안 함 |
 | `EVALUATOR` | `mock` | compose 파일이 정함. `.env`로 바꾸지 않음 |
 
-제출 ZIP 저장 공간은 최악의 경우 `팀 수 × 10 × 500 MB`입니다. 30팀이면 150 GB입니다.
+`ZIP_RETENTION=keep_all`로 전부 보관할 때 ZIP 저장 공간 상한의 단순 추정은 `팀 수 × 20 × 압축 ZIP 한도`입니다. 현재 코드 한도 524,288,000 bytes와 30팀이면 약 314.6 GB(292.97 GiB)이며 DB·출력·패키지 볼륨·공유 pip 캐시·백업 공간은 별도입니다. 기본 `best_public`은 보존 대상 외 완료 ZIP을 정리하지만, 대기·실행·서버 오류·동결 리더보드 참조 ZIP이 추가로 남으므로 팀당 1개만 남는다고 용량을 잡지 않습니다.
 
 ## DB 마이그레이션
 
