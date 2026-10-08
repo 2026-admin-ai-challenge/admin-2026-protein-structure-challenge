@@ -30,6 +30,9 @@ MEDIA_TYPES = {".csv": "text/csv", ".zip": "application/zip"}
 # (like the seed or split settings, which could help rebuild the Public/Private split)
 # stays private until it is added here on purpose.
 PUBLIC_METADATA_KEYS = ("version", "labels", "stats", "files")
+# Inside stats only the sizes the Data tab shows. The per-class counts cover train and test together,
+# so subtracting the public train.csv would reveal the hidden evaluation set's class distribution.
+PUBLIC_STATS_KEYS = ("classes", "train", "test")
 
 
 def metadata():
@@ -45,6 +48,8 @@ def public_metadata():
         return None
     allowed = set(PUBLIC_FILES.values())
     shown = {key: meta[key] for key in PUBLIC_METADATA_KEYS if key in meta}
+    if isinstance(shown.get("stats"), dict):
+        shown["stats"] = {key: value for key, value in shown["stats"].items() if key in PUBLIC_STATS_KEYS}
     return {**shown, "files": {name: info for name, info in (meta.get("files") or {}).items() if name in allowed}}
 
 

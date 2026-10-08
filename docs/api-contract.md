@@ -97,7 +97,7 @@
 ```
 
 - `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
-- `dataset`은 `metadata.json` 중 `version`, `labels`, `stats`, `files`만 담습니다(허용 목록). seed·분할 설정 등 다른 키는 공개하지 않습니다. `files`도 내려받을 수 있는 파일만 남깁니다.
+- `dataset`은 `metadata.json` 중 `version`, `labels`, `stats`, `files`만 담습니다(허용 목록). seed·분할 설정 등 다른 키는 공개하지 않습니다. `stats`도 `classes`, `train`, `test`만 남깁니다. 클래스별 전체 개수(`samples_per_class`)는 학습과 평가를 합친 값이라, 공개된 학습 데이터를 빼면 숨긴 평가 데이터의 클래스 분포가 드러나므로 공개하지 않습니다. `files`도 내려받을 수 있는 파일만 남깁니다.
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
 - 운영 설정(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다. 확정된 제출 차감 기준을 적용하려면 관리자 설정 `count_failed`를 켜 둡니다.

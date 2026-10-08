@@ -27,6 +27,9 @@ public.mkdir(parents=True)
 private.mkdir()
 (public / "metadata.json").write_text(json.dumps({
     "version": "test-1", "labels": ["1.10", "3.40"],
+    # train + test together per class: minus the public train set it gives the hidden class counts.
+    "stats": {"classes": 2, "train": 2, "test": 4, "total": 6, "samples_per_class": {"1.10": 3, "3.40": 3},
+              "sequence_length": {"mean": 4.0, "max": 4}},
     "files": {"train.csv": {"rows": 2, "bytes": 1}, "test.csv": {"rows": 4, "bytes": 1}},
     # Settings that could help rebuild the Public/Private split: never shown to participants.
     "seed": 20261024, "split": {"public_fraction": 0.3}, "policy": {"note": "organizers only"},

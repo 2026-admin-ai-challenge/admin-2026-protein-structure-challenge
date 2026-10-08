@@ -208,6 +208,8 @@ def test_metadata_does_not_describe_hidden_files(client, db):
     # Only an allowlist of metadata keys is public; seed and split settings stay private.
     assert set(dataset) <= {"version", "labels", "stats", "files"}
     assert not {"seed", "split", "policy"} & set(dataset)
+    # Per-class totals include the hidden evaluation set, so only the sizes the Data tab shows are public.
+    assert dataset["stats"] == {"classes": 2, "train": 2, "test": 4}
 
 
 def test_competition_info_does_not_name_the_topic(client, db):
