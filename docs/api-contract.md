@@ -178,13 +178,13 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 - 접수할 때 제출 행과 파일 행을 한 트랜잭션으로 씁니다.
 - 제출 응답의 `size_bytes`, `sha256`, `file_deleted`는 이 테이블에서 읽습니다. 관리자 응답에는 `file_id`, `on_leaderboard`가 더 있습니다.
 - 삭제는 관리자만, 사유와 함께 합니다. **순위에 반영된 제출**과 **채점이 끝나지 않은 제출**의 파일은 삭제할 수 없습니다. 삭제해도 점수·기록·제출 횟수는 그대로이고, 그 제출은 다시 채점할 수 없습니다.
-- 자동 삭제는 없습니다. 보관 기간은 운영진 미결정 사항입니다.
+- `ZIP_RETENTION=best_public`(기본)이면 채점이 끝날 때 팀 최고 Public 제출 등 보존 대상만 남기고 나머지 ZIP을 자동 정리합니다. 보존 조건은 운영진 가이드의 제출 파일 관리 절을 보세요. `keep_all`이면 자동 삭제가 없습니다.
 
 ## 순위 규칙
 
 - Public 순위: 팀별 최고 Public 점수. 채점 성공 직후 갱신(동결 중이면 해제 때 갱신).
 - 동점: 점수가 기록된 시각이 빠른 쪽, 그다음 접수 ID가 작은 쪽.
-- 최종 순위 `(임시, Q7)`: 설정 `final_selection`. `best_public`(기본)은 Public 최고 제출물의 Private 점수, `best_private`는 Private 최고 제출물.
+- 최종 순위 `(확정, Q7)`: Public 최고 제출물의 Private 점수. 설정 `final_selection=best_public`(기본값)입니다. `best_private`(Private 최고 제출물)는 쓰지 않습니다.
 - 다른 평가기로 채점된 제출은 순위에 넣지 않습니다. mock 점수가 실제 순위에 섞이지 않습니다.
 
 ## 제출 ZIP 규격 `(임시, Q2·Q3)`
