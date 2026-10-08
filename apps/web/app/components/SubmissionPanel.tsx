@@ -143,6 +143,13 @@ export default function SubmissionPanel({
         데이터로 추론만 실행해 Public Macro F1을 계산합니다.
       </p>
       {competition?.evaluator === "mock" && <MockNotice />}
+      {competition?.zip_retention === "best_public" && (
+        <p className="body-copy">
+          채점 후에는 팀의 최고 Public 점수 ZIP을 보관합니다. 신기록이 나오면
+          이전 ZIP을 교체하며, 동점이면 기존 최고 제출을 유지합니다. 정리된
+          ZIP의 제출 기록과 점수는 남습니다.
+        </p>
+      )}
       {!user ? (
         <div className="sign-in-card">
           <Lock size={28} />
@@ -318,6 +325,16 @@ export default function SubmissionPanel({
                           {fileSize(s.size_bytes)}
                           {s.submitted_by ? " · " + s.submitted_by : ""}
                         </small>
+                        {s.is_best_public && (
+                          <small className="row-error muted">
+                            팀 최고 Public 점수
+                          </small>
+                        )}
+                        {s.file_deleted && (
+                          <small className="row-error muted">
+                            ZIP 정리됨 · 제출 기록과 점수는 유지됩니다.
+                          </small>
+                        )}
                       </td>
                       <td>
                         <StatusPill status={s.status} />

@@ -11,6 +11,9 @@ os.environ.setdefault("SECRET_KEY", "test-only-secret-with-more-than-thirty-two-
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ["EVALUATOR"] = "mock"
 os.environ["MOCK_DELAY_SECONDS"] = "0"
+# Legacy file-management tests explicitly exercise manual retention. Automatic
+# retention has its own tests enabling best_public.
+os.environ["ZIP_RETENTION"] = "keep_all"
 # Tests run after launch unless they move LAUNCH_AT themselves.
 os.environ["LAUNCH_AT"] = "2000-01-01T00:00:00+00:00"
 _scratch = tempfile.TemporaryDirectory(prefix="admin-api-test-")

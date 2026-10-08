@@ -106,7 +106,10 @@ def mine(user=Depends(current_user), db=Depends(get_db)):
     rows = db.scalars(select(Submission).where(Submission.team_id == user.team_id).order_by(Submission.id.desc())).all()
     positions = queue_positions(db)
     names = dict(db.execute(select(User.id, User.display_name).where(User.team_id == user.team_id)).all())
-    return {"entries": [{**submission_view(row, positions), "submitted_by": names.get(row.user_id)} for row in rows],
+    from ..files import best_public_id
+    best_id = best_public_id(db, user.team_id)
+    return {"entries": [{**submission_view(row, positions), "submitted_by": names.get(row.user_id),
+                         "is_best_public": row.id == best_id} for row in rows],
             **quota_view(db, user.team_id, db.get(Settings, 1))}
 
 

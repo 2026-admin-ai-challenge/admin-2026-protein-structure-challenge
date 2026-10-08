@@ -65,5 +65,8 @@ PREDICTION_CONTRACT = Path(__file__).resolve().parents[1] / "contract" / "predic
 
 # "mock" produces fake scores for development. "docker" runs the real isolated inference.
 EVALUATOR = os.getenv("EVALUATOR", "mock").lower()
+ZIP_RETENTION = os.getenv("ZIP_RETENTION", "best_public").lower()
+if ZIP_RETENTION not in {"best_public", "keep_all"}:
+    raise RuntimeError("ZIP_RETENTION must be 'best_public' or 'keep_all'")
 if EVALUATOR not in {"mock", "docker"}:
     raise RuntimeError("EVALUATOR must be 'mock' or 'docker'")
