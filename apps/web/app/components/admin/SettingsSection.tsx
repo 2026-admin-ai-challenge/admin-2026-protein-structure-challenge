@@ -7,7 +7,7 @@ import Feedback from "./Feedback";
 import { useAdminData } from "./useAdmin";
 
 // Refresh only while the tab is visible: a forgotten background tab should not
-// keep sending requests (tunnel services meter them).
+// keep sending requests.
 const REFRESH_MS = 10000;
 
 export default function SettingsSection({ onChanged }: { onChanged: () => void }) {

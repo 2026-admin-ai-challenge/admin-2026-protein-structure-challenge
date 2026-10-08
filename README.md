@@ -120,7 +120,7 @@ docker compose exec api python -m app.create_admin
 - 화면에서 재설정한 비밀번호는 계정 시트(`accounts/participants.csv`)에 반영되지 않습니다. 이후 시트를 다시 불러오면 시트의 비밀번호로 돌아가므로 한 가지 방법만 쓰세요.
 - 화면에 "mock 채점" 표시가 있으면 점수가 가짜입니다. 실제 대회는 아래의 Docker 격리 평가기로 실행합니다.
 - `docker compose down -v`는 계정, 제출 기록, 점수, 제출 ZIP을 **전부 삭제**합니다. 서비스를 내릴 때는 `-v` 없이 `down`이나 `stop`만 씁니다.
-- ngrok 등 공개 주소로 띄운 동안에는 그 주소에서만 로그인됩니다. `localhost:3000`에서는 로그인이 거절됩니다.
+- 공개 도메인으로 띄운 동안에는 `.env`의 `APP_ORIGIN`에 적은 그 주소에서만 로그인됩니다. `localhost:3000`에서는 로그인이 거절됩니다.
 
 ### 서버에서 쓰는 명령
 
@@ -162,7 +162,7 @@ worker만 Docker 소켓과 숨긴 정답을 읽습니다. API와 참가자 컨�
 - [API·상태 계약](docs/api-contract.md): 네 사람이 같이 쓰는 응답 예시, 상태, 실패 코드, ZIP·추론 규격
 - [참가자 안내](docs/competition.md) · [평가 방식](docs/evaluation.md)
 - [참가자 배포 후보](docs/participant-release-candidates.md): 권장 파일 구조, 공개 금지 자료, 환경 검증 원칙과 두 ZIP 다운로드 협의안
-- [배포·운영](docs/deployment.md) · [운영진 가이드](docs/operations.md) · [임시 HTTPS 공유](docs/temporary-preview.md)
+- [배포·운영](docs/deployment.md) · [운영진 가이드](docs/operations.md)
 - [수동 테스트 체크리스트](docs/manual-test-checklist.md) · [검증 기록](docs/validation.md)
 
 ## 테스트
