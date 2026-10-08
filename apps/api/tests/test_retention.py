@@ -3,8 +3,8 @@ import json
 import pytest
 from sqlalchemy import select
 
-from app import files, storage
-from app.models import AuditLog, Settings, SubmissionFile
+from app import files, leaderboard, storage
+from app.models import AuditLog, LeaderboardEntry, Settings, SubmissionFile
 from app.evaluators.base import Outcome
 from app.evaluators.mock import MockEvaluator
 from app.worker import claim, finish, process_one
@@ -49,6 +49,24 @@ def test_lower_score_new_record_and_tie_keep_one_zip_and_all_history(client, db,
     assert [s["id"] for s in result["entries"] if s["is_best_public"]] == [high]
     assert {s["id"]: s["public_score"] for s in result["entries"]} == {first: 0.4, low: 0.3, high: 0.9, tie: 0.9}
     assert len(db.scalars(select(AuditLog).where(AuditLog.action == "file.retention")).all()) == 3
+
+
+def test_kept_zip_follows_the_leaderboard_tie_rule(client, db, participant, monkeypatch):
+    # Changing the tie rule in one place (e.g. smaller ZIP first) must move both the
+    # board entry and the kept ZIP; otherwise the final submission's ZIP could be gone.
+    def later_wins(rows, field="public_score"):
+        candidates = [row for row in rows if getattr(row, field) is not None]
+        return max(candidates, key=lambda s: (getattr(s, field), s.id), default=None)
+    monkeypatch.setattr(leaderboard, "best_of", later_wins)
+    first = submit(client, public=0.9, private=0.1)
+    score_next(db)
+    tie = submit(client, public=0.9, private=0.2)
+    score_next(db)
+    entry = db.scalar(select(LeaderboardEntry).where(LeaderboardEntry.board == "public"))
+    assert entry.submission_id == tie
+    assert file_for(db, tie).deleted_at is None and file_for(db, first).deleted_at
+    result = client.get("/api/submissions/me").json()
+    assert [s["id"] for s in result["entries"] if s["is_best_public"]] == [tie]
 
 
 def test_pending_and_retryable_server_failure_are_protected(client, db, participant):
