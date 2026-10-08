@@ -185,7 +185,7 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 ## 순위 규칙
 
 - Public 순위: 팀별 최고 Public 점수. 채점 성공 직후 갱신(동결 중이면 해제 때 갱신).
-- 동점: 점수가 기록된 시각이 빠른 쪽, 그다음 접수 ID가 작은 쪽.
+- 동점 `(확정)`: 제출 ZIP(압축 파일) 크기가 작은 쪽, 그다음 먼저 접수한 쪽(접수 시각, 같으면 접수 ID). 팀 안에서 대표 제출(Public·최종 순위, ZIP 보관)을 고를 때와 팀끼리 순위를 정할 때 같은 기준을 씁니다(`app/leaderboard.py`의 `_rank_key`).
 - 최종 순위 `(확정, Q7)`: Public 최고 제출물의 Private 점수. 설정 `final_selection=best_public`(기본값)입니다. `best_private`(Private 최고 제출물)는 쓰지 않습니다.
 - 다른 평가기로 채점된 제출은 순위에 넣지 않습니다. mock 점수가 실제 순위에 섞이지 않습니다.
 

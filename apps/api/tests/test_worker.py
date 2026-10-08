@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import timedelta
 
 import pandas as pd
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from app.evaluators.base import Evaluator, Outcome
 from app.evaluators.mock import MockEvaluator
 from app.leaderboard import rebuild
-from app.models import LeaderboardEntry, Settings, Submission, Team, User, Worker, now
+from app.models import LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now
 from app.worker import process_one, recover_stale
 from conftest import add_account, login, make_zip, upload
 from test_api import HIDDEN_FIELDS, PARTICIPANT_PATHS
@@ -20,10 +21,13 @@ def mock_zip(**controls):
     return make_zip(extra={"mock.json": json.dumps(controls)})
 
 
-def scored(db, user, public, private, seconds=0, evaluator="mock"):
+def scored(db, user, public, private, seconds=0, evaluator="mock", zip_bytes=None):
     stamp = now() + timedelta(seconds=seconds)
     row = Submission(user_id=user["id"], team_id=user["team_id"], filename="code.zip", status="succeeded",
                      public_score=public, private_score=private, evaluator=evaluator, created_at=stamp, finished_at=stamp)
+    if zip_bytes is not None:
+        row.file = SubmissionFile(team_id=user["team_id"], uploaded_by=user["id"], original_filename="code.zip",
+                                  storage_key=uuid.uuid4().hex, sha256="0" * 64, size_bytes=zip_bytes, created_at=stamp)
     db.add(row)
     db.flush()
     return row
@@ -217,7 +221,7 @@ def test_ban_removes_team_from_board(client, db, participant, organizer):
     assert client.get("/api/auth/me").status_code == 403
 
 
-def test_ties_go_to_the_earlier_score_and_teams_appear_once(client, db, participant):
+def test_ties_go_to_the_earlier_submission_and_teams_appear_once(client, db, participant):
     mate = add_account(db, participant["team_name"], "teammate")
     other = add_account(db, "Other team", "otherteam")
     scored(db, participant, 0.8, 0.5, seconds=5)
@@ -229,6 +233,25 @@ def test_ties_go_to_the_earlier_score_and_teams_appear_once(client, db, particip
     entries = client.get("/api/leaderboard").json()["entries"]
     assert [(e["rank"], e["team"], e["score"], e["submissions"]) for e in entries] == [
         (1, "Other team", 0.8, 1), (2, participant["team_name"], 0.8, 2)]
+
+
+def test_ties_go_to_the_smaller_zip_then_the_earlier_submission(client, db, participant):
+    from app.files import best_public_id
+    other = add_account(db, "Other team", "otherteam")
+    third = add_account(db, "Third team", "thirdteam")
+    scored(db, participant, 0.8, 0.1, seconds=1, zip_bytes=900)
+    smaller = scored(db, participant, 0.8, 0.9, seconds=4, zip_bytes=500)  # later, but the smaller ZIP
+    scored(db, other, 0.8, 0.5, seconds=0, zip_bytes=700)                  # earliest, but a bigger ZIP
+    scored(db, third, 0.8, 0.5, seconds=2, zip_bytes=500)                  # same size, submitted earlier
+    rebuild(db)
+    db.commit()
+    entries = client.get("/api/leaderboard").json()["entries"]
+    assert [e["team"] for e in entries] == ["Third team", participant["team_name"], "Other team"]
+    # The team's representative submission (kept ZIP, final submission) follows the same rule.
+    assert best_public_id(db, participant["team_id"]) == smaller.id
+    rebuild(db, "private")
+    assert db.scalar(select(LeaderboardEntry.score).where(
+        LeaderboardEntry.board == "private", LeaderboardEntry.team_id == participant["team_id"])) == 0.9
 
 
 @pytest.mark.parametrize("selection,expected", [

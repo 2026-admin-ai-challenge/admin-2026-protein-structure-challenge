@@ -5,16 +5,23 @@ from .models import LeaderboardEntry, Submission, Team, User, utc
 
 
 def _moment(row):
-    """When the score was recorded. Ties go to the earlier score, then the lower ID."""
+    """When the score was recorded. Kept on the board entry for reference, not for ordering."""
     return utc(row.finished_at or row.created_at)
 
 
+def _rank_key(row, score):
+    """The confirmed tie rule: the higher score, then the smaller uploaded ZIP, then the
+    earlier submission (lower ID). A submission without a ZIP record sorts after one with it."""
+    size = row.size_bytes if row.size_bytes is not None else float("inf")
+    return (-score, size, utc(row.created_at), row.id)
+
+
 def best_of(rows, field="public_score"):
-    """The submission a board takes for one team: the highest `field`, then the earlier
-    score, then the lower ID. ZIP retention keeps the same submission (files.py), so the
-    tie rule lives only here."""
+    """The submission a board takes for one team, by `_rank_key` on `field`. ZIP retention
+    keeps the same submission (files.py) and the board orders teams with the same key, so
+    the tie rule lives only here."""
     candidates = [row for row in rows if getattr(row, field) is not None]
-    return min(candidates, key=lambda s: (-getattr(s, field), _moment(s), s.id), default=None)
+    return min(candidates, key=lambda s: _rank_key(s, getattr(s, field)), default=None)
 
 
 def rebuild(db, board="public", selection="best_public"):
@@ -50,15 +57,15 @@ def rebuild(db, board="public", selection="best_public"):
 
 def listing(db, board):
     rows = db.execute(
-        select(LeaderboardEntry, Team.name)
+        select(LeaderboardEntry, Team.name, Submission)
         .join(Team, Team.id == LeaderboardEntry.team_id)
         .join(Submission, Submission.id == LeaderboardEntry.submission_id)
         .join(User, User.id == Submission.user_id)
         .where(LeaderboardEntry.board == board, User.banned.is_(False))
-        .order_by(LeaderboardEntry.score.desc(), LeaderboardEntry.achieved_at, LeaderboardEntry.submission_id)
     ).all()
+    rows.sort(key=lambda found: _rank_key(found[2], found[0].score))
     return [
         {"rank": i + 1, "team": name, "score": entry.score, "submissions": entry.submission_count,
          "last_submission": entry.last_submission}
-        for i, (entry, name) in enumerate(rows)
+        for i, (entry, name, _) in enumerate(rows)
     ]
