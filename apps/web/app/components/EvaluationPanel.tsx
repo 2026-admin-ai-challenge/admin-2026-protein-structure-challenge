@@ -84,7 +84,9 @@ export default function EvaluationPanel({
           <b>Final leaderboard</b>
           <br />
           대회 종료 후 나머지 70%에서 계산한 Private 점수로 최종 순위를
-          결정합니다. 최종 순위에 반영할 제출물의 선택 방식은 추후 공지합니다.
+          결정합니다. 팀에서 Public 점수가 가장 높았던 제출물 1개가 자동으로
+          최종 제출물이 되며, 다른 제출물의 Private 점수가 더 높아도 바뀌지
+          않습니다.
         </p>
       </div>
       <div className="info-box">

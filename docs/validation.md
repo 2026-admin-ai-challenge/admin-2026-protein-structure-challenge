@@ -1,6 +1,6 @@
 # Validation record
 
-The current code is documented under “Model ZIP submission” directly below (2026-10-02). The later sections are records of the earlier CSV-submission prototype and of the dataset, kept for history; dataset generation now lives in the data repository.
+This file records checks performed at their stated dates. Counts, package policies, public-release descriptions and test totals below are historical results, not the current deployment or competition rules. Current behavior is documented in [API contract](api-contract.md), [evaluation](evaluation.md), [deployment](deployment.md) and [operations](operations.md). Dataset generation lives in the data repository; merging code does not establish that it has been deployed or re-tested on the competition server.
 
 ## Model ZIP submission, queue worker and isolated scoring — 2026-10-02
 
@@ -69,7 +69,7 @@ Only the randomly named test database is dropped. Competition data is not modifi
 - Follow-up: code-only baseline_code.zip is publicly downloadable before/after the event; explicit six-file allowlist and empty notebook outputs verified. Event data/starter kit remain behind the same release gate. Added a regression test covering closed/finalized states and private-resource rejection.
 
 
-## Coordinate-only participant release (current)
+## Coordinate-only participant release (historical revision)
 
 - Participant-facing pages, public notebook and downloads do not recommend graph methods or GNNs. The public coordinate archives have exactly five numeric arrays: residue_type, residue_index, segment_index, pos, ca_mask. No precomputed edges are distributed; old intermediate archives were moved out of the served directory.
 - Sample IDs, train/test split, labels and homology groups are unchanged: 26,961 samples / 20 classes; train 21,568, test 5,393.

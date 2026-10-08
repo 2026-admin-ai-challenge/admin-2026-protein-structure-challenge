@@ -28,6 +28,7 @@ export type Submission = {
   size_bytes: number | null;
   sha256: string | null;
   file_deleted: boolean;
+  is_best_public?: boolean;
   evaluator: string | null;
   queue_position: number | null;
   created_at: string;
@@ -95,6 +96,7 @@ export type Meta = {
   labels: string[];
 };
 export type Competition = {
+  zip_retention?: "best_public" | "keep_all";
   title: string;
   settings: Settings;
   submission_open: boolean;

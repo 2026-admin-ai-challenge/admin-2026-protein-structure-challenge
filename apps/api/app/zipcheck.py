@@ -1,16 +1,19 @@
-"""Submission ZIP checks. `inspect` reads only the directory listing and is used when a
-ZIP is received. `safe_extract` is used by the worker and enforces real sizes while
-unpacking, because the sizes written in a ZIP header can lie."""
+"""Submission ZIP checks. `inspect` reads the directory listing and the root
+requirements.txt, and is used when a ZIP is received. `safe_extract` is used by the worker
+and enforces real sizes while unpacking, because the sizes written in a ZIP header can lie."""
 import os
 import re
 import stat
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 
+from . import packages
 from .config import MAX_UNZIPPED_BYTES, MAX_ZIP_ENTRIES, ZIP_REQUIRED
 
 DRIVE = re.compile(r"^[A-Za-z]:")
 CHUNK = 1024 * 1024
+REQUIREMENTS = "requirements.txt"
 
 
 class ZipRejected(ValueError):
@@ -31,8 +34,25 @@ def _is_directory(info):
     return info.filename.replace("\\", "/").endswith("/")
 
 
+def _packages(path):
+    """What the root requirements.txt asks to install (see app.packages). `inspect` has
+    already refused duplicate and unsafe names, so the normalized name finds one entry."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            info = next(info for info in archive.infolist() if not _is_directory(info) and _normalize(info) == REQUIREMENTS)
+            with archive.open(info) as source:
+                data = source.read(packages.MAX_BYTES + 1)
+    except (zipfile.BadZipFile, NotImplementedError, EOFError, OSError, RuntimeError, zlib.error):
+        raise ZipRejected("requirements.txt의 압축을 풀 수 없습니다. ZIP을 다시 만들어 주세요.")
+    try:
+        return packages.requirements(packages.decode(data))
+    except packages.RequirementsRejected as error:
+        raise ZipRejected(str(error))
+
+
 def inspect(path, required=ZIP_REQUIRED, max_entries=MAX_ZIP_ENTRIES, max_total=MAX_UNZIPPED_BYTES):
-    """Returns {"entries": n, "unpacked_bytes": total} or raises ZipRejected."""
+    """Returns {"entries": n, "unpacked_bytes": total, "packages": ["numpy<3,>=2", ...]} or
+    raises ZipRejected. `packages` is what the root requirements.txt asks to install."""
     try:
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
@@ -74,7 +94,8 @@ def inspect(path, required=ZIP_REQUIRED, max_entries=MAX_ZIP_ENTRIES, max_total=
             "ZIP 최상위에 필수 항목이 없습니다: " + ", ".join(missing)
             + ". 폴더째 압축하지 말고 파일과 model 폴더를 직접 선택해 압축하세요."
         )
-    return {"entries": len(infos), "unpacked_bytes": total}
+    requirements = _packages(path) if REQUIREMENTS in files else []
+    return {"entries": len(infos), "unpacked_bytes": total, "packages": requirements}
 
 
 def safe_extract(path, destination, max_total=MAX_UNZIPPED_BYTES):

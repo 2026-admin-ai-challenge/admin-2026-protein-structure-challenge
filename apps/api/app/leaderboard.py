@@ -9,6 +9,14 @@ def _moment(row):
     return utc(row.finished_at or row.created_at)
 
 
+def best_of(rows, field="public_score"):
+    """The submission a board takes for one team: the highest `field`, then the earlier
+    score, then the lower ID. ZIP retention keeps the same submission (files.py), so the
+    tie rule lives only here."""
+    candidates = [row for row in rows if getattr(row, field) is not None]
+    return min(candidates, key=lambda s: (-getattr(s, field), _moment(s), s.id), default=None)
+
+
 def rebuild(db, board="public", selection="best_public"):
     """Rewrites one board from scored submissions.
 
@@ -28,7 +36,9 @@ def rebuild(db, board="public", selection="best_public"):
         teams.setdefault(row.team_id, []).append(row)
     field = "private_score" if board == "private" and selection == "best_private" else "public_score"
     for team_id, subs in teams.items():
-        best = min(subs, key=lambda s: (-getattr(s, field), _moment(s), s.id))
+        best = best_of(subs, field)
+        if best is None:
+            continue
         db.add(LeaderboardEntry(
             team_id=team_id, submission_id=best.id, board=board,
             score=best.private_score if board == "private" else best.public_score,

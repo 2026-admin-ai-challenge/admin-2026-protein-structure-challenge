@@ -4,6 +4,7 @@ from fastapi import HTTPException
 # they never include container output, which could leak hidden evaluation input.
 FAILURES = {
     "zip_invalid": "ZIP 내용이 제출 규격에 맞지 않습니다.",
+    "install_failed": "requirements.txt의 패키지를 설치하지 못했습니다. 패키지 이름·버전과, Linux·Python 3.12용 wheel이 PyPI에 있는지 확인하세요.",
     "runtime_error": "추론 코드가 오류와 함께 종료되었습니다.",
     "timeout": "추론이 제한 시간 안에 끝나지 않았습니다.",
     "out_of_memory": "추론 중 메모리 한도를 넘어 종료되었습니다.",
