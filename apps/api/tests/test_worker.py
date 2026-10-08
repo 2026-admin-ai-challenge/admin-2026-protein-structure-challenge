@@ -258,3 +258,26 @@ def test_final_board_follows_the_configured_rule(client, db, participant, organi
     assert [(e["team"], e["score"]) for e in final] == expected
     assert client.patch("/api/admin/competition", json={"is_open": True}).status_code == 409
     assert client.patch(f"/api/admin/users/{participant['id']}", json={"banned": True}).status_code == 409
+
+
+def test_worker_waits_while_the_contract_and_dataset_disagree(db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from prediction_validator import load_contract
+    from app import worker
+    from app.config import PREDICTION_CONTRACT
+    from app.scoring.predictions import contract_problem
+
+    expected = load_contract(PREDICTION_CONTRACT).expected_rows
+    assert contract_problem([f"TEST_{i:06d}" for i in range(expected)]) is None
+
+    class Docker(Evaluator):
+        name = "docker"
+
+    # The test labels have 4 evaluation IDs, not the contract's expected_rows.
+    monkeypatch.setattr(worker, "get_evaluator", Docker)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=db.get_bind(), expire_on_commit=False))
+    monkeypatch.setenv("WORKER_NAME", "contract-check")
+    upload_free = db.scalar(select(Submission.id))
+    worker.run_forever(once=True)
+    row = db.get(Worker, "contract-check")
+    assert row.ready is False and "E903" in row.detail and upload_free is None

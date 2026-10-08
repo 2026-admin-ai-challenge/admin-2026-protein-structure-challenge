@@ -29,9 +29,24 @@ const FILES = [
     "학습 데이터의 H-group 검증 분할",
   ],
   [
-    "example_io.zip",
-    "example",
-    "추론 입력과 같은 형식의 작은 예제 입력·출력",
+    "example_input.csv",
+    "example-input",
+    "예제 입력: 평가 입력 test.csv와 같은 형식의 id·서열",
+  ],
+  [
+    "example_features.csv",
+    "example-features",
+    "예제 입력: 평가 입력 test_features.csv와 같은 형식의 31개 특징",
+  ],
+  [
+    "example_structures.zip",
+    "example-structures",
+    "예제 입력: 평가 입력 test_structures.zip과 같은 형식의 NPZ 구조",
+  ],
+  [
+    "example_output.csv",
+    "example-output",
+    "예제 출력: 예측 파일 predictions.csv와 같은 형식 (id,label)",
   ],
 ];
 

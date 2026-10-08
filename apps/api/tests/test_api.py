@@ -193,7 +193,8 @@ def test_settings_validation_and_audit(client, db, organizer):
 EVALUATION_INPUT = ["test", "test-structures", "test-features", "sample-submission", "starter-kit"]
 # The analysis charts sit in data/public but are for the organizers' presentation only.
 ANALYSIS_CHARTS = ["class-distribution", "length-distribution"]
-PARTICIPANT_FILES = ["train", "train-features", "train-structures", "validation-split"]
+PARTICIPANT_FILES = ["train", "train-features", "train-structures", "validation-split",
+                     "example-input", "example-features", "example-structures", "example-output"]
 
 
 @pytest.mark.parametrize("kind", EVALUATION_INPUT + ANALYSIS_CHARTS + ["labels", "private"])
@@ -204,6 +205,9 @@ def test_evaluation_input_is_never_downloadable(client, db, participant, kind):
 def test_metadata_does_not_describe_hidden_files(client, db):
     dataset = client.get("/api/competition").json()["dataset"]
     assert "train.csv" in dataset["files"] and "test.csv" not in dataset["files"]
+    # Only an allowlist of metadata keys is public; seed and split settings stay private.
+    assert set(dataset) <= {"version", "labels", "stats", "files"}
+    assert not {"seed", "split", "policy"} & set(dataset)
 
 
 def test_competition_info_does_not_name_the_topic(client, db):
@@ -277,7 +281,7 @@ def test_dataset_approval_verify_and_lock(client, db, organizer):
     client.cookies.set("admin_session", organizer)
     before = client.get("/api/admin/dataset").json()
     assert before["version"] == "test-1" and before["approved"]["version"] is None
-    assert {"train.csv", "example_io.zip"} <= {entry["name"] for entry in before["files"]}
+    assert {"train.csv", "example_input.csv", "example_structures.zip"} <= {entry["name"] for entry in before["files"]}
     assert "test.csv" not in json.dumps(before)
     assert client.post("/api/admin/dataset/lock", json={"locked": True}).status_code == 409
     approved = client.post("/api/admin/dataset/approve").json()

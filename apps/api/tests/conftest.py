@@ -28,17 +28,19 @@ private.mkdir()
 (public / "metadata.json").write_text(json.dumps({
     "version": "test-1", "labels": ["1.10", "3.40"],
     "files": {"train.csv": {"rows": 2, "bytes": 1}, "test.csv": {"rows": 4, "bytes": 1}},
+    # Settings that could help rebuild the Public/Private split: never shown to participants.
+    "seed": 20261024, "split": {"public_fraction": 0.3}, "policy": {"note": "organizers only"},
 }))
 (public / "train.csv").write_text("id,sequence,label\nTRAIN_1,AAAA,1.10\nTRAIN_2,CCCC,3.40\n")
 # Evaluation input left over from the CSV prototype. It must never be downloadable.
 (public / "test.csv").write_text("id,sequence\nTEST_1,AAAA\nTEST_2,CCCC\nTEST_3,GGGG\nTEST_4,TTTT\n")
 (public / "test_features.csv").write_text("id,value\n")
 (private / "labels.csv").write_text("id,label,partition\nTEST_1,1.10,public\nTEST_2,3.40,public\nTEST_3,1.10,private\nTEST_4,3.40,private\n")
-for filename in ["train_features.csv", "validation_split.csv"]:
+for filename in ["train_features.csv", "validation_split.csv", "example_input.csv", "example_features.csv", "example_output.csv"]:
     (public / filename).write_text("id,value\n")
 for filename in ["class_distribution.png", "sequence_length_distribution.png"]:
     (public / filename).write_bytes(b"placeholder image")
-for filename in ["train_structures.zip", "test_structures.zip", "starter_kit.zip"]:
+for filename in ["train_structures.zip", "test_structures.zip", "starter_kit.zip", "example_structures.zip"]:
     with zipfile.ZipFile(public / filename, "w"):
         pass
 with zipfile.ZipFile(public / "baseline_code.zip", "w") as archive:

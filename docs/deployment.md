@@ -53,7 +53,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 
 ### 격리 내용
 
-참가자 컨테이너는 `--network none`, 읽기 전용 루트, 사용자 65534, 모든 capability 제거, `no-new-privileges`, 프로세스·CPU·메모리 제한, `/tmp`만 쓰기 가능으로 실행합니다. 마운트는 제출 내용(읽기 전용), 평가 입력(읽기 전용), 출력 디렉터리 하나, 그리고 `requirements.txt`가 패키지를 요구한 경우 패키지 볼륨(읽기 전용)뿐입니다. 10분을 넘으면 worker가 강제 종료하고, worker가 죽어도 컨테이너 안의 타이머가 종료시킵니다. 출력 디렉터리가 5 MB를 넘어도 종료합니다.
+참가자 컨테이너는 `--network none`, 읽기 전용 루트, 사용자 65534, 모든 capability 제거, `no-new-privileges`, 프로세스·CPU·메모리 제한, `/tmp`만 쓰기 가능으로 실행합니다. 마운트는 제출 내용(읽기 전용), 평가 입력(읽기 전용), 출력 디렉터리 하나, 그리고 `requirements.txt`가 패키지를 요구한 경우 패키지 볼륨(읽기 전용)뿐입니다. 10분을 넘으면 worker가 강제 종료하고, worker가 죽어도 컨테이너 안의 타이머가 종료시킵니다. 출력 디렉터리가 예측 계약의 파일 크기 상한(`output.max_file_bytes`, 현재 10 MB)을 넘어도 종료합니다.
 
 패키지 설치 컨테이너도 같은 제한으로 실행하며, 마운트는 그 제출의 패키지 볼륨(`admin-eval-env-<시각>-<제출>-<난수>`)뿐입니다. 제출 내용과 평가 입력은 보지 않고, worker가 `requirements.txt`를 해석해 다시 쓴 요구사항만 인자로 받습니다. 먼저 `--network none`으로 이미지 안의 wheel만 써서 설치하고, 실패할 때만 기본 bridge 네트워크로 다시 실행해 PyPI에서 받습니다(이때만 공유 캐시 볼륨 `admin-eval-pip-cache`도 붙음). wheel만 받으므로 네트워크가 열린 동안 실행되는 것은 pip뿐입니다. 받은 패키지의 코드는 네트워크 없는 추론 컨테이너에서만 실행됩니다. 패키지 볼륨은 채점이 끝나면 지우고, worker가 죽어 남은 볼륨은 다음 채점 때 정리합니다(`docker volume ls --filter name=admin-eval-env-`로 확인). 캐시가 커지면 대회 중이 아닐 때 `docker volume rm admin-eval-pip-cache`로 지웁니다.
 
@@ -89,6 +89,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 | `ZIP_REQUIRED` | `inference.py,train.py,requirements.txt,model/` | **임시**. 데이터팀과 확정 |
 | `EVAL_INSTALL_TIMEOUT_SECONDS` | 600 | 제출 패키지 설치 제한(오프라인·온라인 합계). 추론 시간과 따로 셈 |
 | `EVAL_PIP_CACHE_VOLUME` | `admin-eval-pip-cache` | PyPI에서 받은 파일의 공유 캐시 볼륨. 빈 값이면 캐시 안 함 |
+| `EVAL_MAX_OUTPUT_BYTES` | 예측 계약의 `output.max_file_bytes`(10 MB) | 추론 출력 디렉터리 상한. 비우면 계약 값을 따름 |
 | `EVALUATOR` | `mock` | compose 파일이 정함. `.env`로 바꾸지 않음 |
 
 `ZIP_RETENTION=keep_all`로 전부 보관할 때 ZIP 저장 공간 상한의 단순 추정은 `팀 수 × 20 × 압축 ZIP 한도`입니다. 현재 코드 한도 524,288,000 bytes와 30팀이면 약 314.6 GB(292.97 GiB)이며 DB·출력·패키지 볼륨·공유 pip 캐시·백업 공간은 별도입니다. 기본 `best_public`은 보존 대상 외 완료 ZIP을 정리하지만, 대기·실행·서버 오류·동결 리더보드 참조 ZIP이 추가로 남으므로 팀당 1개만 남는다고 용량을 잡지 않습니다.

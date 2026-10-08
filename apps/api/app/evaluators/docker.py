@@ -30,7 +30,9 @@ import time
 import uuid
 from pathlib import Path
 
-from ..config import INFERENCE_TIMEOUT_SECONDS, REPO_ROOT
+from prediction_validator import load_contract
+
+from ..config import INFERENCE_TIMEOUT_SECONDS, PREDICTION_CONTRACT, REPO_ROOT
 from ..errors import FAILURES
 from ..zipcheck import ZipRejected, inspect, safe_extract
 from .base import Evaluator, Outcome, failure
@@ -51,7 +53,9 @@ WORK_DIR = Path(os.getenv("EVAL_WORK_DIR", str(REPO_ROOT / "var" / "eval-work"))
 WORK_HOST_DIR = Path(os.getenv("EVAL_WORK_HOST_DIR", str(WORK_DIR)))
 # Host path of the hidden evaluation input mounted read-only at /input.
 INPUT_HOST_DIR = os.getenv("EVAL_INPUT_HOST_DIR", "")
-MAX_OUTPUT_BYTES = int(os.getenv("EVAL_MAX_OUTPUT_BYTES", str(5 * 1024 * 1024)))
+# The prediction contract's file size limit (output.max_file_bytes) also caps the whole
+# output directory, so the container is stopped where the validator would refuse the file.
+MAX_OUTPUT_BYTES = int(os.getenv("EVAL_MAX_OUTPUT_BYTES") or load_contract(PREDICTION_CONTRACT).max_file_bytes)
 LOG_TAIL_BYTES = 16 * 1024
 KILL_GRACE_SECONDS = 15
 OUTPUT_NAME = "predictions.csv"

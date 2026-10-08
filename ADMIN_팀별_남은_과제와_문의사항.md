@@ -83,8 +83,8 @@
 - [ ] **데이터** 스타터킷·베이스라인 `requirements.txt`의 `jupyterlab`은 추론에 필요 없고 PyPI에서 받느라 느리므로 뺀다.
 - [ ] **데이터** `runtime/README.md`(규칙 2·3)와 `COMPETITION_PACKAGES.md`의 "제출마다 requirements.txt를 설치하지 않는다"는 문구를 새 방식에 맞게 고친다.
 - [ ] **데이터→웹/API** 원본 계약의 '형식 오류 미차감' 문구를 확정 Q4 정책과 맞춘다. 현재 웹 사본의 차감 기준은 검증기 README에 별도로 기록돼 있다.
-- [ ] **웹/API** worker 시작 시 `verify_contract_against_dataset()` 호출을 연결한다. 현재 함수는 복사됐지만 시작 경로에서 호출하지 않는다.
-- [ ] **웹/API** 공개 metadata의 seed·분할 설정과 참가자 오류 안내의 줄 번호 노출을 데이터 PR #14 점검 결과에 따라 수정·검증한다.
+- [x] **웹/API** worker 시작 시 `verify_contract_against_dataset()` 호출을 연결했다. Docker 평가기에서 계약과 데이터셋의 평가 건수가 어긋나면 작업자가 "준비 안 됨(E903)"으로 채점을 멈춘다. 운영 데이터 사본을 바꾼 뒤에는 작업자 상태를 확인한다.
+- [ ] **웹/API** 공개 metadata는 `version`·`labels`·`stats`·`files`만 내보내도록 바꿔 seed·분할 설정을 감췄다. 참가자 오류 안내의 줄 번호 노출은 데이터 PR #14 점검 결과에 따라 수정·검증한다.
 - [ ] **데이터→웹/API** 89개 목록이 바뀌면 `apps/evaluator/requirements-competition.lock.txt` 사본을 갱신하고 채점 이미지를 다시 빌드한다. 낡아도 채점은 되지만 빠진 패키지를 매번 PyPI에서 받는다.
 - [ ] **웹/API** (선택) 같은 패키지 조합의 설치 결과(가상환경)를 제출 간에 재사용한다. 지금은 제출마다 새로 설치하며, 89개 전부 설치에 약 20초가 걸린다. PyPI에서 받은 파일만 공유 캐시(`admin-eval-pip-cache`)에 남는다.
 

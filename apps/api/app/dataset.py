@@ -13,15 +13,23 @@ from .config import DATA_DIR
 # server, so participants never receive evaluation input. The data team's analysis charts
 # (class_distribution.png, sequence_length_distribution.png) are kept for the presentation
 # and are not distributed either.
-# PROVISIONAL: `example` is the small public input/output example the data team will add.
+# The example-* files are the data team's small public example in the evaluation input
+# format (test.csv, test_features.csv, test_structures.zip) plus a matching output.
 PUBLIC_FILES = {
     "train": "train.csv",
     "train-features": "train_features.csv",
     "train-structures": "train_structures.zip",
     "validation-split": "validation_split.csv",
-    "example": "example_io.zip",
+    "example-input": "example_input.csv",
+    "example-features": "example_features.csv",
+    "example-structures": "example_structures.zip",
+    "example-output": "example_output.csv",
 }
 MEDIA_TYPES = {".csv": "text/csv", ".zip": "application/zip"}
+# What participants see of metadata.json. An allowlist, so a key the data team adds later
+# (like the seed or split settings, which could help rebuild the Public/Private split)
+# stays private until it is added here on purpose.
+PUBLIC_METADATA_KEYS = ("version", "labels", "stats", "files")
 
 
 def metadata():
@@ -30,12 +38,14 @@ def metadata():
 
 
 def public_metadata():
-    """Metadata for participants, without entries describing files they cannot download."""
+    """Metadata for participants: only PUBLIC_METADATA_KEYS, and only entries describing
+    files they can download."""
     meta = metadata()
     if not meta:
         return None
     allowed = set(PUBLIC_FILES.values())
-    return {**meta, "files": {name: info for name, info in (meta.get("files") or {}).items() if name in allowed}}
+    shown = {key: meta[key] for key in PUBLIC_METADATA_KEYS if key in meta}
+    return {**shown, "files": {name: info for name, info in (meta.get("files") or {}).items() if name in allowed}}
 
 
 def hash_file(path):

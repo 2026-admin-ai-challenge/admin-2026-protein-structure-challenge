@@ -142,7 +142,7 @@ python inference.py --input sample_input/sample_features.csv --output sample_pre
 | 항목 | 현재 문서·구현과의 차이 | 확정할 내용 |
 | --- | --- | --- |
 | 학습 내부 검증 분할 | [참가자 안내](competition.md)는 학습 내부 검증 분할 제공을 안내하고, [PUBLIC_FILES](../apps/api/app/dataset.py)와 [DataPanel](../apps/web/app/components/DataPanel.tsx)은 `validation_split.csv`를 제공합니다. 최소 트리의 학습 자료는 요청한 세 파일입니다. | `validation_split.csv`를 학습 전용 추가 파일로 유지할지, 동등한 분할 정보를 어떤 방식으로 제공할지 결정합니다. 기존 안내를 무시하고 삭제하지 않습니다. 학습 내부 분할과 **금지 대상인 평가 Public/Private 분할**은 다릅니다. |
-| 예제 묶음 | [API 계약](api-contract.md)은 `example_io.zip`을 임시 이름으로 가정하고 현재 다운로드 목록에도 있습니다. | `admin2026_starter_kit.zip`의 `sample_input/`과 `example_output.csv`로 통합할지, 기존 경로 호환이 필요한지 결정합니다. |
+| 예제 묶음 | 현재 다운로드 목록은 데이터팀 공개 예제 `example_input.csv`, `example_features.csv`, `example_structures.zip`, `example_output.csv`를 개별로 내려줍니다([API 계약](api-contract.md)). | `admin2026_starter_kit.zip`의 `sample_input/`과 `example_output.csv`로 통합할지, 기존 경로 호환이 필요한지 결정합니다. |
 | sample/test 입력 이름 | 현재 계약·[Docker 평가기](../apps/api/app/evaluators/docker.py)는 서버의 `test.*` 이름을 사용합니다. | 4절에 따라 서열·구조 입력 이름 매핑을 합의하고 동일 코드의 로컬 샘플 추론과 서버 추론을 확인합니다. |
 | 두 ZIP 다운로드 | 현재 API·화면은 세 학습 파일, 검증 분할, 예제를 개별 다운로드합니다. 두 ZIP 경로는 아직 없습니다. | 데이터팀의 ZIP 생성과 웹팀의 허용 목록·메타데이터·버전/해시·승인/잠금·화면·API 계약을 함께 갱신합니다. |
 | 코드 전용 사전 배포 | [public 라우터](../apps/api/app/routers/public.py)의 `/resources/baseline`은 `baseline_code.zip`을 별도로 제공하고, 시작 전 일반 참가자에게는 차단합니다. [DataPanel](../apps/web/app/components/DataPanel.tsx)의 ‘미리 받기’ 표현 및 [과거 검증 기록](validation.md)의 사전 공개 설명과 차이가 있습니다. | 코드 전용 묶음을 두 다운로드에 통합할지, 별도 예외로 유지할지와 공개 시점을 정하고 안내를 맞춥니다. sample이 든 Starter Kit을 자동으로 사전 공개하지 않습니다. |
