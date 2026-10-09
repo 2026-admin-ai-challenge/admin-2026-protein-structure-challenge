@@ -21,7 +21,7 @@ Q7은 웹 PR #18의 Public 최고 제출물 기준으로 확정하고, 문서의
 갱신을 빠뜨리면 계약의 `expected_rows` 가 실제 데이터와 어긋납니다. 2026-10-08
 점검에서 실제로 어긋난 상태(사본 5,387 / 실제 5,330)가 발견됐고, 그래서
 `verify_contract_against_dataset()` 가 추가됐습니다. worker 시작 시 한 번
-호출하면 어긋난 계약으로 채점하는 것을 막습니다 (`E903`). 현재 worker 시작 경로에는 이 호출이 연결돼 있지 않으므로 후속 구현이 필요합니다.
+호출하면 어긋난 계약으로 채점하는 것을 막습니다 (`E903`). Docker 평가기 worker는 숨긴 정답을 확인할 때 이 함수로 계약과 평가 ID 수를 비교하고(`app/scoring/predictions.py`의 `contract_problem`), 어긋나면 "준비 안 됨"으로 채점을 멈춥니다.
 
 worker는 `app/scoring/predictions.py`를 거쳐 호출하고 계약 경로를 직접 넘깁니다. 명령줄로 쓸 때도 `--contract`가 필요합니다.
 

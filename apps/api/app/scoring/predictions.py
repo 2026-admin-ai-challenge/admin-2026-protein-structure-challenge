@@ -10,7 +10,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from prediction_validator import validate_submission_output
+from prediction_validator import validate_submission_output, verify_contract_against_dataset
 
 from ..config import PREDICTION_CONTRACT
 
@@ -40,6 +40,17 @@ def check(content: bytes, ids: list[str], classes: list[str]):
         message = " ".join(outcome.participant_error_lines)
         raise OutputRejected(message, f"{outcome.summary_line}\n{detail}", outcome.operator_fault)
     return _in_order(content, ids), outcome.summary_line
+
+
+def contract_problem(ids: list[str]):
+    """None when the copied contract matches the hidden evaluation IDs, otherwise why not.
+    The worker checks this before scoring, as the contract's drift guard asks: scoring
+    with a stale contract (e.g. the wrong expected_rows) would blame teams for it (E903)."""
+    report = verify_contract_against_dataset(contract_path=PREDICTION_CONTRACT, eval_ids=ids)
+    if report.ok:
+        return None
+    return "prediction contract does not match the dataset: " + "; ".join(
+        f"{finding.code} {', '.join(finding.samples)}".strip() for finding in report.errors)
 
 
 def _in_order(content, ids):

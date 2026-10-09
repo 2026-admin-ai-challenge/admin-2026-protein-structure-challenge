@@ -100,6 +100,7 @@
 ```
 
 - `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
+- `dataset`은 `metadata.json` 중 `version`, `labels`, `stats`, `files`만 담습니다(허용 목록). seed·분할 설정 등 다른 키는 공개하지 않습니다. `stats`도 `classes`, `train`, `test`만 남깁니다. 클래스별 전체 개수(`samples_per_class`)는 학습과 평가를 합친 값이라, 공개된 학습 데이터를 빼면 숨긴 평가 데이터의 클래스 분포가 드러나므로 공개하지 않습니다. `files`도 내려받을 수 있는 파일만 남깁니다.
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
 - 운영 설정(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다. 확정된 제출 차감 기준을 적용하려면 관리자 설정 `count_failed`를 켜 둡니다.
@@ -112,7 +113,7 @@
  "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
 ```
 
-`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
+`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`과 공개 예제 `example-input`(`example_input.csv`), `example-features`(`example_features.csv`), `example-structures`(`example_structures.zip`), `example-output`(`example_output.csv`)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
 
 `GET /resources/baseline`은 데이터 없이 코드만 담은 베이스라인 ZIP입니다. 대회 기간과 상관없이 받을 수 있지만, 코드에 대회 주제가 드러나므로 `LAUNCH_AT` 전에는 관리자만 받고 나머지는 403입니다.
 
@@ -236,4 +237,4 @@ code.zip
 2. 진입점 형태: 위의 `--input/--output` 인자 방식으로 고정해도 되는가.
 3. 채점 이미지의 기본 패키지(`apps/evaluator/requirements.txt`)와 미리 받아 둘 89개 목록(`runtime/requirements-competition.lock.txt`). 목록을 바꾸면 사본을 갱신하고 이미지를 다시 빌드합니다. 목록 밖 패키지도 설치는 되지만 PyPI에서 받으므로 느립니다.
 4. `metadata.json`에 `version`과 `validation`(검증 통과 여부)을 넣어 줄 수 있는가. 관리자 데이터 화면이 이 값을 읽습니다.
-5. 작은 공개 예제 입출력 파일의 이름. 지금은 `example_io.zip`으로 가정했습니다.
+5. ~~작은 공개 예제 입출력 파일의 이름.~~ → 데이터팀이 만든 `example_input.csv`, `example_features.csv`, `example_structures.zip`, `example_output.csv`를 그대로 내려줍니다.
