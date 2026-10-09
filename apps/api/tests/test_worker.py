@@ -120,6 +120,18 @@ def test_server_faults_never_use_an_attempt_and_can_be_requeued(client, db, part
     assert {"submission.requeue", "submission.counted"} <= actions
 
 
+def test_requeue_keeps_an_attempt_the_organizer_gave_back(client, db, participant, organizer):
+    submitted = upload(client, mock_zip(fail="runtime_error")).json()
+    assert process_one(db, MOCK, "worker-a").counted is True
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/submissions/{submitted['id']}", json={"counted": False}).json()["used"] == 0
+    assert client.post(f"/api/admin/submissions/{submitted['id']}/requeue").status_code == 200
+    db.expire_all()
+    assert db.get(Submission, submitted["id"]).counted is False
+    assert process_one(db, MOCK, "worker-a").counted is False
+    assert client.get("/api/admin/teams").json()[0]["used"] == 0
+
+
 def test_restart_recovers_running_submissions(client, db, participant):
     submitted = upload(client).json()
     row = db.get(Submission, submitted["id"])

@@ -12,6 +12,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .config import SECRET_KEY
 from .db import get_db
+from .errors import ApiError
 from .models import RateBucket, User
 
 hasher = PasswordHasher()
@@ -44,7 +45,7 @@ def current_user(request: Request, db=Depends(get_db)):
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(401, "로그인이 필요합니다.")
     if not user or user.banned:
-        raise HTTPException(403, "계정에 접근할 수 없습니다.")
+        raise ApiError(403, "banned", "계정에 접근할 수 없습니다.")
     if claims.get("pv") != fingerprint(user.password_hash):
         raise HTTPException(401, "비밀번호가 변경되었습니다. 다시 로그인하세요.")
     return user
@@ -75,6 +76,6 @@ def rate_limit(db, key, limit=20):
         bucket.count = 0
     if bucket.count >= limit:
         db.commit()
-        raise HTTPException(429, "요청이 너무 많습니다. 1분 후 다시 시도하세요.")
+        raise ApiError(429, "rate_limited", "요청이 너무 많습니다. 1분 후 다시 시도하세요.")
     bucket.count += 1
     db.commit()
