@@ -110,7 +110,7 @@
 
 ```json
 {"board": "public", "frozen": false, "evaluator": "mock",
- "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
+ "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "grading_seconds": 12.345, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
 ```
 
 `final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`과 공개 예제 `example-input`(`example_input.csv`), `example-features`(`example_features.csv`), `example-structures`(`example_structures.zip`), `example-output`(`example_output.csv`)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
@@ -123,7 +123,7 @@
 
 ```json
 {"id": 41, "filename": "code.zip", "status": "queued", "failure_code": null, "error_message": null,
- "failure_detail": null, "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
+ "failure_detail": null, "public_score": null, "grading_seconds": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
  "queue_position": 3, "created_at": "…", "started_at": null, "finished_at": null,
  "used": 4, "limit": 20, "remaining": 16}
 ```
@@ -190,7 +190,7 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 ## 순위 규칙
 
 - Public 순위: 팀별 최고 Public 점수. 채점 성공 직후 갱신(동결 중이면 해제 때 갱신).
-- 동점 `(확정)`: 제출 ZIP(압축 파일) 크기가 작은 쪽, 그다음 먼저 접수한 쪽(접수 시각, 같으면 접수 ID). 팀 안에서 대표 제출(Public·최종 순위, ZIP 보관)을 고를 때와 팀끼리 순위를 정할 때 같은 기준을 씁니다(`app/leaderboard.py`의 `_rank_key`).
+- 동점 `(확정)`: 채점 시간(`grading_seconds`: `running`이 된 시각부터 `succeeded`로 끝난 시각까지의 초, 대기 시간 제외. 기록이 없으면 `null`이고 동점에서 뒤로 갑니다)이 짧은 쪽, 그다음 제출 ZIP(압축 파일) 크기가 작은 쪽, 그다음 먼저 접수한 쪽(접수 시각, 같으면 접수 ID). 팀 안에서 대표 제출(Public·최종 순위, ZIP 보관)을 고를 때와 팀끼리 순위를 정할 때 같은 기준을 씁니다(`app/leaderboard.py`의 `_rank_key`).
 - 최종 순위 `(확정, Q7)`: Public 최고 제출물의 Private 점수. 설정 `final_selection=best_public`(기본값)입니다. `best_private`(Private 최고 제출물)는 쓰지 않습니다.
 - 다른 평가기로 채점된 제출은 순위에 넣지 않습니다. mock 점수가 실제 순위에 섞이지 않습니다.
 

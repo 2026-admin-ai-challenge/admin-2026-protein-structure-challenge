@@ -96,6 +96,14 @@ class Submission(Base):
     file: Mapped["SubmissionFile | None"] = relationship(back_populates="submission", uselist=False, lazy="selectin")
 
     @property
+    def grading_seconds(self):
+        """Seconds from `running` to `succeeded`, without the wait in the queue. None when
+        the submission did not succeed or was scored before the start time was recorded."""
+        if self.status != "succeeded" or not self.started_at or not self.finished_at:
+            return None
+        return (utc(self.finished_at) - utc(self.started_at)).total_seconds()
+
+    @property
     def file_deleted(self):
         return bool(self.file and self.file.deleted_at)
 

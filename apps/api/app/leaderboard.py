@@ -10,10 +10,12 @@ def _moment(row):
 
 
 def _rank_key(row, score):
-    """The confirmed tie rule: the higher score, then the smaller uploaded ZIP, then the
-    earlier submission (lower ID). A submission without a ZIP record sorts after one with it."""
+    """The tie rule: the higher score, then the shorter grading time, then the smaller
+    uploaded ZIP, then the earlier submission (lower ID). A submission without a grading
+    time or a ZIP record sorts after one with it."""
+    grading = row.grading_seconds if row.grading_seconds is not None else float("inf")
     size = row.size_bytes if row.size_bytes is not None else float("inf")
-    return (-score, size, utc(row.created_at), row.id)
+    return (-score, grading, size, utc(row.created_at), row.id)
 
 
 def best_of(rows, field="public_score"):
@@ -65,7 +67,7 @@ def listing(db, board):
     ).all()
     rows.sort(key=lambda found: _rank_key(found[2], found[0].score))
     return [
-        {"rank": i + 1, "team": name, "score": entry.score, "submissions": entry.submission_count,
-         "last_submission": entry.last_submission}
-        for i, (entry, name, _) in enumerate(rows)
+        {"rank": i + 1, "team": name, "score": entry.score, "grading_seconds": submission.grading_seconds,
+         "submissions": entry.submission_count, "last_submission": entry.last_submission}
+        for i, (entry, name, submission) in enumerate(rows)
     ]

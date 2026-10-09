@@ -4,7 +4,7 @@ import { ArrowRight, ArrowUpRight, Lock, Upload } from "lucide-react";
 import { ApiError, api, uploadZip } from "../lib/api";
 import { isPending } from "../lib/status";
 import SubmissionFailure from "./SubmissionFailure";
-import { date, fileSize, megabytes, minutes } from "../format";
+import { date, duration, fileSize, megabytes, minutes } from "../format";
 import type {
   Competition,
   Quota,
@@ -146,8 +146,9 @@ export default function SubmissionPanel({
       {competition?.zip_retention === "best_public" && (
         <p className="body-copy">
           채점 후에는 팀의 최고 Public 점수 ZIP을 보관합니다. 신기록이 나오면
-          이전 ZIP을 교체하며, 점수가 같으면 ZIP이 더 작은 제출을, 크기도
-          같으면 먼저 제출한 것을 보관합니다. 정리된 ZIP의 제출 기록과 점수는
+          이전 ZIP을 교체하며, 점수가 같으면 채점 시간이 더 짧은 제출을, 채점
+          시간도 같으면 ZIP이 더 작은 제출을, 크기도 같으면 먼저 제출한 것을
+          보관합니다. 정리된 ZIP의 제출 기록과 점수는
           남습니다.
         </p>
       )}
@@ -312,6 +313,7 @@ export default function SubmissionPanel({
                   <th>File</th>
                   <th>Status</th>
                   <th>Public Score</th>
+                  <th>채점 시간</th>
                   <th>Submitted at</th>
                 </tr>
               </thead>
@@ -348,11 +350,12 @@ export default function SubmissionPanel({
                       <td className="score">
                         {s.public_score?.toFixed(5) ?? "—"}
                       </td>
+                      <td>{duration(s.grading_seconds)}</td>
                       <td>{date(s.created_at)}</td>
                     </tr>
                     {s.status === "failed" && (
                       <tr className="submission-failure-row">
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <SubmissionFailure
                             submission={s}
                             admin={user.role === "ADMIN"}

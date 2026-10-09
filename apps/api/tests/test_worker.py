@@ -266,6 +266,68 @@ def test_ties_go_to_the_smaller_zip_then_the_earlier_submission(client, db, part
         LeaderboardEntry.board == "private", LeaderboardEntry.team_id == participant["team_id"])) == 0.9
 
 
+def graded(db, user, public, private, grading, **options):
+    """A scored submission that took `grading` seconds from running to succeeded."""
+    row = scored(db, user, public, private, **options)
+    row.started_at = row.finished_at - timedelta(seconds=grading)
+    db.flush()
+    return row
+
+
+def test_ties_go_to_the_shorter_grading_time_before_the_smaller_zip(client, db, participant):
+    other = add_account(db, "Other team", "otherteam")
+    third = add_account(db, "Third team", "thirdteam")
+    untimed = add_account(db, "Untimed team", "untimedteam")
+    graded(db, participant, 0.8, 0.5, 12.346, seconds=1, zip_bytes=500)
+    graded(db, other, 0.8, 0.5, 12.345, seconds=5, zip_bytes=900)  # later and bigger, but 1 ms faster
+    graded(db, third, 0.7, 0.4, 1.0, zip_bytes=100)                # the fastest, but lower scores
+    scored(db, untimed, 0.8, 0.5, zip_bytes=100)                   # no start time recorded: after the timed ties
+    rebuild(db)
+    rebuild(db, "private")
+    db.commit()
+    expected = [(1, "Other team", 12.345), (2, participant["team_name"], 12.346), (3, "Untimed team", None),
+                (4, "Third team", 1.0)]
+    entries = client.get("/api/leaderboard").json()["entries"]
+    assert [(e["rank"], e["team"], e["grading_seconds"]) for e in entries] == expected
+    # The final board breaks equal Private scores the same way.
+    db.get(Settings, 1).finalized = True
+    db.commit()
+    entries = client.get("/api/leaderboard?board=final").json()["entries"]
+    assert [(e["rank"], e["team"], e["grading_seconds"]) for e in entries] == expected
+
+
+def test_team_takes_the_faster_of_its_equal_best_submissions(client, db, participant):
+    from app.files import best_public_id
+    mate = add_account(db, participant["team_name"], "teammate")
+    slower = graded(db, participant, 0.8, 0.1, 125.1, seconds=1, zip_bytes=500)
+    faster = graded(db, mate, 0.8, 0.9, 12.3, seconds=4, zip_bytes=900)  # later and bigger, but graded faster
+    graded(db, participant, 0.7, 0.5, 1.0, seconds=2, zip_bytes=500)     # the fastest, but a lower score
+    rebuild(db)
+    rebuild(db, "private")
+    db.commit()
+    assert best_public_id(db, participant["team_id"]) == faster.id
+    entry, = client.get("/api/leaderboard").json()["entries"]
+    assert (entry["score"], entry["grading_seconds"], entry["submissions"]) == (0.8, 12.3, 3)
+    assert db.scalar(select(LeaderboardEntry.score).where(LeaderboardEntry.board == "private")) == 0.9
+    history = {s["id"]: s for s in client.get("/api/submissions/me").json()["entries"]}
+    assert (history[faster.id]["is_best_public"], history[faster.id]["grading_seconds"]) == (True, 12.3)
+    assert (history[slower.id]["is_best_public"], history[slower.id]["grading_seconds"]) == (False, 125.1)
+
+
+def test_grading_time_covers_running_to_succeeded_only(client, db, participant):
+    done = upload(client, mock_zip(public=0.5)).json()
+    failed = upload(client, mock_zip(fail="runtime_error")).json()
+    assert done["grading_seconds"] is None  # still queued
+    process_one(db, MOCK, "worker-a")
+    process_one(db, MOCK, "worker-a")
+    row = db.get(Submission, done["id"])
+    row.created_at, row.started_at = row.finished_at - timedelta(minutes=10), row.finished_at - timedelta(seconds=2.5)
+    db.commit()
+    history = {s["id"]: s for s in client.get("/api/submissions/me").json()["entries"]}
+    assert history[done["id"]]["grading_seconds"] == 2.5  # the ten minutes in the queue are not counted
+    assert history[failed["id"]]["status"] == "failed" and history[failed["id"]]["grading_seconds"] is None
+
+
 @pytest.mark.parametrize("selection,expected", [
     ("best_public", [("Other team", 0.6), ("Protein Learners", 0.3)]),
     ("best_private", [("Protein Learners", 0.9), ("Other team", 0.6)]),
