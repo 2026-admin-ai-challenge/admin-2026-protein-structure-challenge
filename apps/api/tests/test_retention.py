@@ -30,6 +30,10 @@ def score_next(db):
     return process_one(db, MockEvaluator(), "retention-test")
 
 
+def kept_ids(db):
+    return [f.submission_id for f in db.scalars(select(SubmissionFile).where(SubmissionFile.deleted_at.is_(None)))]
+
+
 def test_lower_score_new_record_and_tie_keep_one_zip_and_all_history(client, db, participant):
     first = submit(client, public=0.4, private=0.8)
     score_next(db)
@@ -38,17 +42,25 @@ def test_lower_score_new_record_and_tie_keep_one_zip_and_all_history(client, db,
     assert file_for(db, first).deleted_at is None and file_for(db, low).deleted_at
     high = submit(client, public=0.9, private=0.4)
     score_next(db)
-    tie = submit(client, public=0.9, private=0.9)
+    # Same score with a bigger ZIP: the kept ZIP stays.
+    heavier = upload(client, make_zip(extra={"mock.json": json.dumps({"public": 0.9}), "model/extra.bin": bytes(range(256)) * 64})).json()["id"]
+    score_next(db)
+    assert kept_ids(db) == [high]
+    # Same score with a smaller ZIP: it becomes the team's best and replaces the kept ZIP.
+    lighter = upload(client, make_zip({"inference.py": "", "train.py": "", "requirements.txt": "", "model/w": "",
+                                       "mock.json": json.dumps({"public": 0.9})})).json()["id"]
+    assert file_for(db, lighter).size_bytes < file_for(db, high).size_bytes
     score_next(db)
     kept = db.scalars(select(SubmissionFile).where(SubmissionFile.deleted_at.is_(None))).all()
-    assert [f.submission_id for f in kept] == [high]
+    assert [f.submission_id for f in kept] == [lighter]
     assert storage.path_for(kept[0].storage_key).exists()
     assert files.check(db, with_hashes=True)["ok"]
     result = client.get("/api/submissions/me").json()
-    assert len(result["entries"]) == 4 and result["used"] == 4
-    assert [s["id"] for s in result["entries"] if s["is_best_public"]] == [high]
-    assert {s["id"]: s["public_score"] for s in result["entries"]} == {first: 0.4, low: 0.3, high: 0.9, tie: 0.9}
-    assert len(db.scalars(select(AuditLog).where(AuditLog.action == "file.retention")).all()) == 3
+    assert len(result["entries"]) == 5 and result["used"] == 5
+    assert [s["id"] for s in result["entries"] if s["is_best_public"]] == [lighter]
+    assert {s["id"]: s["public_score"] for s in result["entries"]} == {
+        first: 0.4, low: 0.3, high: 0.9, heavier: 0.9, lighter: 0.9}
+    assert len(db.scalars(select(AuditLog).where(AuditLog.action == "file.retention")).all()) == 4
 
 
 def test_kept_zip_follows_the_leaderboard_tie_rule(client, db, participant, monkeypatch):
