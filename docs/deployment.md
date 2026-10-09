@@ -7,7 +7,7 @@
 | `gateway` | nginx. 유일한 입구(포트 3000). 화면은 `web`으로, `/api`는 `api`로 직접 전달 | — |
 | `web` | Next.js 화면 | — |
 | `api` | 인증, 접수, 조회, 관리자 API | DB, 참가자 공개 데이터(읽기 전용), 제출 ZIP 저장소(쓰기) |
-| `worker` | 대기열 채점 | DB, 제출 ZIP 저장소(읽기 전용). 실제 채점 시 Docker 소켓, 숨긴 정답 |
+| `worker` | 대기열 채점 | DB, 제출 ZIP 저장소(읽기·삭제: 보관 정책에 따른 정리). 실제 채점 시 Docker 소켓, 숨긴 정답 |
 | `postgres` | 계정·팀·제출·점수·순위·조작 기록 | — |
 
 제출 ZIP은 Docker 볼륨 `submissions`에 있고 웹으로 공개되는 경로가 아닙니다. 숨긴 정답은 `api`에 연결하지 않습니다.
@@ -62,6 +62,23 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 ### 자원 정하기
 
 동방 컴퓨터에서 베이스라인과 구조 기반 모델을 각각 같은 방식으로 실행해 시간과 메모리를 재고 `EVAL_CPUS`, `EVAL_MEMORY`를 정합니다. worker 하나는 한 번에 한 건만 채점합니다. 동시에 여러 건을 돌리려면 `docker compose ... up -d --scale worker=2`처럼 worker 수를 늘리되, `worker 수 × EVAL_MEMORY`와 웹·API·DB가 쓸 몫을 합쳐 실제 메모리 안에 들어와야 합니다. 대회 중에는 이 컴퓨터에서 다른 학습을 돌리지 않습니다.
+
+## CI 자동 배포
+
+`main`에 push(머지)되면 GitHub Actions [`deploy.yml`](../.github/workflows/deploy.yml)이 웹 서버에 배포합니다. Actions 화면에서 수동으로 실행할 수도 있습니다.
+
+1. `api`, `worker`, `web` 이미지를 빌드해 `ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/<이름>`에 `latest`와 커밋 SHA 태그로 올립니다. 서버(1 OCPU)에서는 빌드하지 않습니다.
+2. 서버에 SSH로 접속해 `docker-compose.yml`, `docker-compose.ghcr.yml`, `deploy/nginx.conf`를 `~/admin-2026-protein-structure-challenge/`에 복사하고, 두 compose 파일로 `pull`과 `up -d`를 실행한 뒤 오래된 이미지를 지웁니다. 서버의 `.env`는 바꾸지 않습니다.
+3. 저장소 secrets `DEPLOY_KEY`(SSH 개인 키)와 `DEPLOY_HOST`가 필요합니다. 레지스트리 로그인은 작업마다 발급되는 토큰으로 하고 끝나면 로그아웃합니다.
+
+이 배포에는 `docker-compose.evaluator.yml`이 들어가지 않으므로 `EVALUATOR=mock`으로 실행됩니다. 실채점 장비는 이 경로로 배포하지 않습니다. 같은 서버에서 Docker 평가기를 켜 두면 다음 머지 때 api·worker가 mock 설정으로 다시 만들어집니다.
+
+같은 이미지를 손으로 받으려면 처음 한 번 `docker login ghcr.io`(read:packages 토큰)를 한 뒤 다음을 실행합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
 
 ## HTTPS 운영
 
