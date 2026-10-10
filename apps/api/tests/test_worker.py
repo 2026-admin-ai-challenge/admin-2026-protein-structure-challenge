@@ -274,44 +274,44 @@ def graded(db, user, public, private, grading, **options):
     return row
 
 
-def test_ties_go_to_the_shorter_grading_time_before_the_smaller_zip(client, db, participant):
+def test_grading_time_is_shown_but_never_breaks_a_tie(client, db, participant):
     other = add_account(db, "Other team", "otherteam")
     third = add_account(db, "Third team", "thirdteam")
     untimed = add_account(db, "Untimed team", "untimedteam")
     graded(db, participant, 0.8, 0.5, 12.346, seconds=1, zip_bytes=500)
-    graded(db, other, 0.8, 0.5, 12.345, seconds=5, zip_bytes=900)  # later and bigger, but 1 ms faster
+    graded(db, other, 0.8, 0.5, 12.345, seconds=5, zip_bytes=900)  # 1 ms faster, but a bigger ZIP
     graded(db, third, 0.7, 0.4, 1.0, zip_bytes=100)                # the fastest, but lower scores
-    scored(db, untimed, 0.8, 0.5, zip_bytes=100)                   # no start time recorded: after the timed ties
+    scored(db, untimed, 0.8, 0.5, zip_bytes=100)                   # no start time recorded, the smallest ZIP
     rebuild(db)
     rebuild(db, "private")
     db.commit()
-    expected = [(1, "Other team", 12.345), (2, participant["team_name"], 12.346), (3, "Untimed team", None),
+    expected = [(1, "Untimed team", None), (2, participant["team_name"], 12.346), (3, "Other team", 12.345),
                 (4, "Third team", 1.0)]
     entries = client.get("/api/leaderboard").json()["entries"]
     assert [(e["rank"], e["team"], e["grading_seconds"]) for e in entries] == expected
-    # The final board breaks equal Private scores the same way.
+    # The final board ignores grading time the same way.
     db.get(Settings, 1).finalized = True
     db.commit()
     entries = client.get("/api/leaderboard?board=final").json()["entries"]
     assert [(e["rank"], e["team"], e["grading_seconds"]) for e in entries] == expected
 
 
-def test_team_takes_the_faster_of_its_equal_best_submissions(client, db, participant):
+def test_team_keeps_the_smaller_zip_of_its_equal_best_submissions_however_slow(client, db, participant):
     from app.files import best_public_id
     mate = add_account(db, participant["team_name"], "teammate")
     slower = graded(db, participant, 0.8, 0.1, 125.1, seconds=1, zip_bytes=500)
-    faster = graded(db, mate, 0.8, 0.9, 12.3, seconds=4, zip_bytes=900)  # later and bigger, but graded faster
+    faster = graded(db, mate, 0.8, 0.9, 12.3, seconds=4, zip_bytes=900)  # graded faster, but a bigger ZIP
     graded(db, participant, 0.7, 0.5, 1.0, seconds=2, zip_bytes=500)     # the fastest, but a lower score
     rebuild(db)
     rebuild(db, "private")
     db.commit()
-    assert best_public_id(db, participant["team_id"]) == faster.id
+    assert best_public_id(db, participant["team_id"]) == slower.id
     entry, = client.get("/api/leaderboard").json()["entries"]
-    assert (entry["score"], entry["grading_seconds"], entry["submissions"]) == (0.8, 12.3, 3)
-    assert db.scalar(select(LeaderboardEntry.score).where(LeaderboardEntry.board == "private")) == 0.9
+    assert (entry["score"], entry["grading_seconds"], entry["submissions"]) == (0.8, 125.1, 3)
+    assert db.scalar(select(LeaderboardEntry.score).where(LeaderboardEntry.board == "private")) == 0.1
     history = {s["id"]: s for s in client.get("/api/submissions/me").json()["entries"]}
-    assert (history[faster.id]["is_best_public"], history[faster.id]["grading_seconds"]) == (True, 12.3)
-    assert (history[slower.id]["is_best_public"], history[slower.id]["grading_seconds"]) == (False, 125.1)
+    assert (history[slower.id]["is_best_public"], history[slower.id]["grading_seconds"]) == (True, 125.1)
+    assert (history[faster.id]["is_best_public"], history[faster.id]["grading_seconds"]) == (False, 12.3)
 
 
 def test_grading_time_covers_running_to_succeeded_only(client, db, participant):

@@ -3,7 +3,7 @@ import json
 import pytest
 from sqlalchemy import select
 
-from app import files, leaderboard, storage, worker
+from app import files, leaderboard, storage
 from app.models import AuditLog, LeaderboardEntry, Settings, SubmissionFile
 from app.evaluators.base import Outcome
 from app.evaluators.mock import MockEvaluator
@@ -34,10 +34,7 @@ def kept_ids(db):
     return [f.submission_id for f in db.scalars(select(SubmissionFile).where(SubmissionFile.deleted_at.is_(None)))]
 
 
-def test_lower_score_new_record_and_tie_keep_one_zip_and_all_history(client, db, participant, monkeypatch):
-    # A stopped worker clock gives every submission the same grading time, so ties fall to ZIP size.
-    stamp = worker.now()
-    monkeypatch.setattr(worker, "now", lambda: stamp)
+def test_lower_score_new_record_and_tie_keep_one_zip_and_all_history(client, db, participant):
     first = submit(client, public=0.4, private=0.8)
     score_next(db)
     low = submit(client, public=0.3, private=0.9)

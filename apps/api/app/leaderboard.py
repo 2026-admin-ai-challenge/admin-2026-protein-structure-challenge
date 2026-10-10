@@ -10,12 +10,11 @@ def _moment(row):
 
 
 def _rank_key(row, score):
-    """The tie rule: the higher score, then the shorter grading time, then the smaller
-    uploaded ZIP, then the earlier submission (lower ID). A submission without a grading
-    time or a ZIP record sorts after one with it."""
-    grading = row.grading_seconds if row.grading_seconds is not None else float("inf")
+    """The confirmed tie rule: the higher score, then the smaller uploaded ZIP, then the
+    earlier submission (lower ID). A submission without a ZIP record sorts after one with it.
+    Grading time is shown for reference only and never breaks a tie."""
     size = row.size_bytes if row.size_bytes is not None else float("inf")
-    return (-score, grading, size, utc(row.created_at), row.id)
+    return (-score, size, utc(row.created_at), row.id)
 
 
 def best_of(rows, field="public_score"):
