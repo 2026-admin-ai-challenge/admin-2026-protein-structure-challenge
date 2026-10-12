@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, Lock, RotateCcw, Trophy } from "lucide-react";
 import { api } from "../lib/api";
-import { date } from "../format";
+import { date, duration } from "../format";
 import type { Competition, Entry } from "../types";
 import Empty from "./Empty";
 import { MockNotice } from "./StatusPill";
@@ -27,6 +27,7 @@ export function LeaderboardTable({
               {board === "final" ? "Private" : "Public"} Score{" "}
               <ChevronDown size={12} />
             </th>
+            <th>채점 시간</th>
             <th>Scored submissions</th>
             <th>Last submission</th>
           </tr>
@@ -45,6 +46,7 @@ export function LeaderboardTable({
                 <strong>{e.team}</strong>
               </td>
               <td className="score">{e.score.toFixed(5)}</td>
+              <td>{duration(e.grading_seconds)}</td>
               <td>{e.submissions}</td>
               <td>{date(e.last_submission)}</td>
             </tr>

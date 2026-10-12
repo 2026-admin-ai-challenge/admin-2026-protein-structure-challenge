@@ -11,7 +11,8 @@ def _moment(row):
 
 def _rank_key(row, score):
     """The confirmed tie rule: the higher score, then the smaller uploaded ZIP, then the
-    earlier submission (lower ID). A submission without a ZIP record sorts after one with it."""
+    earlier submission (lower ID). A submission without a ZIP record sorts after one with it.
+    Grading time is shown for reference only and never breaks a tie."""
     size = row.size_bytes if row.size_bytes is not None else float("inf")
     return (-score, size, utc(row.created_at), row.id)
 
@@ -65,7 +66,7 @@ def listing(db, board):
     ).all()
     rows.sort(key=lambda found: _rank_key(found[2], found[0].score))
     return [
-        {"rank": i + 1, "team": name, "score": entry.score, "submissions": entry.submission_count,
-         "last_submission": entry.last_submission}
-        for i, (entry, name, _) in enumerate(rows)
+        {"rank": i + 1, "team": name, "score": entry.score, "grading_seconds": submission.grading_seconds,
+         "submissions": entry.submission_count, "last_submission": entry.last_submission}
+        for i, (entry, name, submission) in enumerate(rows)
     ]
