@@ -180,6 +180,13 @@ def test_csrf_and_login_rate_limit(client, monkeypatch):
     assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
 
 
+def test_organizer_login_is_never_rate_limited(client, organizer, monkeypatch):
+    stop_the_clock(monkeypatch)
+    for _ in range(70):
+        assert client.post("/api/auth/login", json={"username": "organizer", "password": "NotCorrect123"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": "organizer", "password": "longpassword123"}).status_code == 200
+
+
 def test_upload_rate_limit_and_banned_account_carry_codes(client, db, participant, organizer, monkeypatch):
     stop_the_clock(monkeypatch)
     # Neither uses an attempt, and a client can tell them from limit_reached and closed.

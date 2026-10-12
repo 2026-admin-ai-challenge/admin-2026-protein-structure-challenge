@@ -15,11 +15,13 @@ router = APIRouter(prefix="/api/auth")
 @router.post("/login")
 def login(body: Login, request: Request, response: Response, db=Depends(get_db)):
     username = body.username.strip().lower()
-    # The site sits behind one proxy address, so the per-address bucket is generous
-    # and guessing is limited per account instead.
-    rate_limit(db, "auth:" + request.client.host, 60)
-    rate_limit(db, "auth-user:" + username, 10)
     user = db.scalar(select(User).where(User.username == username))
+    # Organizer accounts are never locked out of signing in.
+    if not user or user.role != "ADMIN":
+        # The site sits behind one proxy address, so the per-address bucket is generous
+        # and guessing is limited per account instead.
+        rate_limit(db, "auth:" + request.client.host, 60)
+        rate_limit(db, "auth-user:" + username, 10)
     valid = verify(body.password, user.password_hash if user else DUMMY_HASH)
     if not user or not valid or user.banned:
         raise HTTPException(401, "아이디 또는 비밀번호를 확인하세요.")
