@@ -26,7 +26,7 @@ code.zip
 
 - 필수 항목이 ZIP **최상위**에 있어야 합니다. 폴더를 통째로 압축하면 한 단계 안쪽에 들어가 접수되지 않습니다. 파일과 `model` 폴더를 직접 선택해 압축하세요. `train.py`가 빠진 ZIP도 접수되지 않습니다(횟수는 차감되지 않음).
 - 압축 ZIP은 최대 500 MB, 추론은 최대 10분입니다.
-- 채점 환경에는 기본 패키지(numpy, pandas, scipy, scikit-learn, joblib, torch CPU)만 설치되어 있습니다. `requirements.txt`에 적은 패키지는 **추론 직전에 적은 버전대로 설치**합니다. 대회 패키지 목록(89개)의 버전은 서버에 미리 받아 두어 빠르게 설치되고, 그 밖의 패키지나 버전은 PyPI에서 받습니다. 설치 시간은 추론 10분에 포함되지 않습니다.
+- 채점 환경에는 기본 패키지(numpy, pandas, scipy, scikit-learn, joblib, torch, transformers, plotly, matplotlib, pyarrow, SQLAlchemy, catboost)만 설치되어 있습니다. `requirements.txt`에 적은 패키지는 **추론 직전에 적은 버전대로 설치**합니다. 기본 패키지는 적은 조건(`transformers>=5` 등)을 기본 버전이 만족하면 그대로 쓰고, 만족하지 않는 버전을 적으면 그 버전을 새로 설치합니다. 기본 패키지도 `requirements.txt`에 적어 두는 것을 권장합니다. 대회 패키지 목록(89개)의 버전은 서버에 미리 받아 두어 빠르게 설치되고, 그 밖의 패키지나 버전은 PyPI에서 받습니다. 설치 시간은 추론 10분에 포함되지 않습니다.
 - **추론 중에는 학습과 인터넷 접속을 할 수 없습니다.** 필요한 패키지는 모두 `requirements.txt`에 적어야 합니다.
 - PyPI에 **Linux·Python 3.12용 wheel이 있는 패키지만** 설치할 수 있습니다(소스 빌드 불가). 설치하지 못하면 "패키지 설치 실패"로 채점이 끝나고 횟수가 차감됩니다. GPU용 torch(`torch==2.14.1+cu128`)는 같은 버전의 CPU 빌드로 설치합니다.
 - `-r`, `-e`, 파일 경로, URL은 쓸 수 없어 ZIP을 받는 즉시 거절합니다(횟수 차감 없음). `--extra-index-url` 같은 인덱스 옵션과 `--hash`는 무시합니다. PowerShell에서 `pip freeze > requirements.txt`로 만든 UTF-16 파일도 읽습니다.

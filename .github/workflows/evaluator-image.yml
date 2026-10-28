@@ -60,7 +60,7 @@ jobs:
           test "$label" = "1" || { echo "installer label is '$label', expected 1" >&2; exit 1; }
           # Base packages import without network, as the unprivileged user inference runs as.
           docker run --rm --network none --read-only --user 65534:65534 --tmpfs /tmp -e HOME=/tmp "$image" \
-            python -c "import numpy, pandas, scipy, sklearn, joblib, torch; print('torch', torch.__version__)"
+            python -c "import numpy, pandas, scipy, sklearn, joblib, torch, transformers, plotly, matplotlib, pyarrow, sqlalchemy, catboost; print('torch', torch.__version__)"
           test -n "$(docker run --rm --network none "$image" ls /opt/wheels)"
       - name: Push
         if: github.event_name != 'pull_request'

@@ -57,6 +57,11 @@ def main():
         requirements = [XGBOOST.sub("xgboost-cpu", item) for item in requirements]
     else:
         sources = ["--find-links", WHEELS, "--extra-index-url", TORCH_INDEX]
+    # --no-compile: pip would byte-compile every .py file it unpacks, which was most of the time
+    # of a large install (49-57 s down to 13-15 s for the whole lock on the GPU machine). The
+    # inference container cannot write .pyc files, so those packages are compiled in memory at
+    # each import instead: about 3 s more per run for the heaviest set. The base packages are
+    # installed with pip's default and keep their .pyc files.
     # Downloads go next to the environment, on disk: /tmp is a small tmpfs held in memory.
     scratch = os.path.join(os.path.dirname(target), "tmp")
     os.makedirs(scratch, exist_ok=True)
@@ -64,7 +69,7 @@ def main():
         code = subprocess.call([
             f"{target}/bin/python", "-m", "pip", "install", *sources, "--only-binary", ":all:",
             "--disable-pip-version-check", "--no-warn-script-location", "--progress-bar", "off",
-            *requirements,
+            "--no-compile", *requirements,
         ], env={**os.environ, "TMPDIR": scratch})
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

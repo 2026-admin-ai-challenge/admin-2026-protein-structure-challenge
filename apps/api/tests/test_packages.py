@@ -18,7 +18,9 @@ def test_base_packages_come_from_the_lock():
     assert len(lock) == 89 and all("==" in item for item in lock)
     # The image installs its base packages from the wheels of the lock, so each must be there.
     base = requirements((EVALUATOR / "requirements.txt").read_text(encoding="utf-8"))
-    assert base == ["joblib==1.6.0", "numpy==2.5.3", "pandas==3.0.6", "scikit-learn==1.9.1", "scipy==1.18.1", "torch==2.14.1"]
+    assert base == ["catboost==1.2.10", "joblib==1.6.0", "matplotlib==3.11.2", "numpy==2.5.3", "pandas==3.0.6",
+                    "plotly==7.1.0", "pyarrow==25.0.1", "scikit-learn==1.9.1", "scipy==1.18.1", "SQLAlchemy==2.1.1",
+                    "torch==2.14.1", "transformers==5.18.0"]
     assert set(base) <= set(lock)
 
 
