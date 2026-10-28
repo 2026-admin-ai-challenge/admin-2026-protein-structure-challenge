@@ -12,6 +12,7 @@ from ..accounts import create_user, random_password
 from ..audit import record
 from ..dataset import metadata, public_file_report
 from ..db import get_db
+from ..errors import UNCOUNTED_FAILURES
 from ..leaderboard import rebuild
 from ..models import AuditLog, LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now, utc
 from ..schemas import (BanPatch, CompetitionReset, CountedPatch, FileDelete, LockPatch, SettingsPatch, TeamCreate,
@@ -270,7 +271,12 @@ def requeue(id: int, admin=Depends(admin_user), db=Depends(get_db)):
     if not row.storage_key or not storage.path_for(row.storage_key).exists():
         raise HTTPException(409, "저장된 ZIP이 없어 다시 채점할 수 없습니다.")
     previous = row.failure_code
-    row.status, row.attempts, row.counted, row.worker_id = "queued", 0, True, None
+    # An attempt the system gave back by itself (server fault, ZIP violation, or every
+    # failure while count_failed is off) is used again, like a fresh submission. One an
+    # organizer refunded by hand stays refunded. The team limit is not checked here.
+    if previous in UNCOUNTED_FAILURES or not s.count_failed:
+        row.counted = True
+    row.status, row.attempts, row.worker_id = "queued", 0, None
     row.failure_code = row.error_message = row.log_tail = None
     row.started_at = row.heartbeat_at = row.finished_at = None
     record(db, admin, "submission.requeue", f"submission:{row.id}", {"previous_failure": previous})

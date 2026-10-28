@@ -164,12 +164,42 @@ def test_time_gate(client, db, participant):
     assert upload(client).status_code == 403
 
 
-def test_csrf_and_login_rate_limit(client):
+def stop_the_clock(monkeypatch):
+    """Rate limits count per wall-clock minute; a test crossing a minute boundary would reset its count."""
+    from types import SimpleNamespace
+    monkeypatch.setattr("app.security.time", SimpleNamespace(time=lambda: 1_000_000_020.0))
+
+
+def test_csrf_and_login_rate_limit(client, monkeypatch):
+    stop_the_clock(monkeypatch)
     assert client.post("/api/auth/logout", headers={"x-requested-with": "bad"}).status_code == 403
     assert client.post("/api/auth/logout", headers={"origin": "https://evil.example"}).status_code == 403
     for _ in range(10):
         assert client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"}).status_code == 429
+    refused = client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"})
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+
+
+def test_organizer_login_is_never_rate_limited(client, organizer, monkeypatch):
+    stop_the_clock(monkeypatch)
+    for _ in range(70):
+        assert client.post("/api/auth/login", json={"username": "organizer", "password": "NotCorrect123"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": "organizer", "password": "longpassword123"}).status_code == 200
+
+
+def test_upload_rate_limit_and_banned_account_carry_codes(client, db, participant, organizer, monkeypatch):
+    stop_the_clock(monkeypatch)
+    # Neither uses an attempt, and a client can tell them from limit_reached and closed.
+    for _ in range(10):
+        assert upload(client, b"not a zip").json()["code"] == "zip_invalid"
+    refused = upload(client, b"not a zip")
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+    session = client.cookies.get("admin_session")
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/users/{participant['id']}", json={"banned": True}).status_code == 200
+    client.cookies.set("admin_session", session)
+    blocked = client.get("/api/submissions/me")
+    assert blocked.status_code == 403 and blocked.json()["code"] == "banned"
 
 
 def test_scoring_isolation_is_on_until_an_organizer_turns_it_off(client, db, organizer):
@@ -205,7 +235,8 @@ def test_settings_validation_and_audit(client, db, organizer):
 EVALUATION_INPUT = ["test", "test-structures", "test-features", "sample-submission", "starter-kit"]
 # The analysis charts sit in data/public but are for the organizers' presentation only.
 ANALYSIS_CHARTS = ["class-distribution", "length-distribution"]
-PARTICIPANT_FILES = ["train", "train-features", "train-structures", "validation-split"]
+PARTICIPANT_FILES = ["train", "train-features", "train-structures", "validation-split",
+                     "example-input", "example-features", "example-structures", "example-output"]
 
 
 @pytest.mark.parametrize("kind", EVALUATION_INPUT + ANALYSIS_CHARTS + ["labels", "private"])
@@ -216,6 +247,11 @@ def test_evaluation_input_is_never_downloadable(client, db, participant, kind):
 def test_metadata_does_not_describe_hidden_files(client, db):
     dataset = client.get("/api/competition").json()["dataset"]
     assert "train.csv" in dataset["files"] and "test.csv" not in dataset["files"]
+    # Only an allowlist of metadata keys is public; seed and split settings stay private.
+    assert set(dataset) <= {"version", "labels", "stats", "files"}
+    assert not {"seed", "split", "policy"} & set(dataset)
+    # Per-class totals include the hidden evaluation set, so only the sizes the Data tab shows are public.
+    assert dataset["stats"] == {"classes": 2, "train": 2, "test": 4}
 
 
 def test_competition_info_does_not_name_the_topic(client, db):
@@ -289,7 +325,7 @@ def test_dataset_approval_verify_and_lock(client, db, organizer):
     client.cookies.set("admin_session", organizer)
     before = client.get("/api/admin/dataset").json()
     assert before["version"] == "test-1" and before["approved"]["version"] is None
-    assert {"train.csv", "example_io.zip"} <= {entry["name"] for entry in before["files"]}
+    assert {"train.csv", "example_input.csv", "example_structures.zip"} <= {entry["name"] for entry in before["files"]}
     assert "test.csv" not in json.dumps(before)
     assert client.post("/api/admin/dataset/lock", json={"locked": True}).status_code == 409
     approved = client.post("/api/admin/dataset/approve").json()

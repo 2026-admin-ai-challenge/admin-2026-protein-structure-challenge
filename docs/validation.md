@@ -1,6 +1,6 @@
 # Validation record
 
-This file records checks performed at their stated dates. Counts, package policies, public-release descriptions and test totals below are historical results, not the current deployment or competition rules. Current behavior is documented in [API contract](api-contract.md), [evaluation](evaluation.md), [deployment](deployment.md) and [operations](operations.md). Dataset generation lives in the data repository; merging code does not establish that it has been deployed or re-tested on the competition server.
+This file records checks performed at their stated dates. Counts, package policies, public-release descriptions and test totals below are historical results, not the current deployment or competition rules. Current behavior is documented in [API contract](api-contract.md), [evaluation](evaluation.md), [deployment](deployment.md) and [operations](operations.md). Dataset generation lives in the data repository; merging to main deploys the web server automatically with the mock evaluator (see deployment.md), but does not establish that the scoring machine has been deployed or re-tested.
 
 ## Model ZIP submission, queue worker and isolated scoring — 2026-10-02
 

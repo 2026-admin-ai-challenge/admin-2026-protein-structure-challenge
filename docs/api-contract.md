@@ -8,7 +8,7 @@
 
 - 모든 경로는 `/api`로 시작합니다. 로그인 세션은 `admin_session` 쿠키(HttpOnly, 12시간)입니다.
 - `POST`, `PATCH`에는 헤더 `X-Requested-With: ADMIN-Challenge`가 필요합니다.
-- 오류 응답은 `{"detail": "한국어 안내", "code": "기계용 코드"}`입니다. `code`는 제출 접수 오류에만 항상 있습니다.
+- 오류 응답은 `{"detail": "한국어 안내", "code": "기계용 코드"}`입니다. 제출 접수 거절에는 401(로그인 필요)을 빼고 항상 `code`가 있습니다. 차단 계정(`banned`), 요청 속도 제한(`rate_limited`), 잘못된 Content-Length(`bad_request`)도 경로와 관계없이 `code`를 붙입니다. 그 밖의 오류는 `detail`만 있을 수 있습니다.
 - 시각은 모두 UTC ISO 8601입니다.
 
 ## 제출 상태
@@ -53,12 +53,15 @@
 
 | HTTP | `code` | 상황 |
 | --- | --- | --- |
+| 400 | `bad_request` | Content-Length가 숫자가 아님 |
 | 401 | — | 로그인 필요, 또는 비밀번호 재설정으로 세션 만료 |
+| 403 | `banned` | 차단된 계정 |
 | 403 | `closed` | 제출 기간이 아님 |
 | 413 | `zip_too_large` | 압축 ZIP이 상한 초과 |
 | 415 | `not_zip` | 파일 이름이 `.zip`이 아님 |
 | 422 | `zip_invalid` | ZIP이 아님, 손상, 필수 항목 누락, 경로 순회, 심볼릭 링크, 중복 경로, 항목 수·해제 크기 초과 |
 | 429 | `limit_reached` | 팀 제출 횟수 소진 |
+| 429 | `rate_limited` | 계정당 1분에 10회를 넘는 업로드 시도(1분 뒤 다시 가능) |
 
 ## 인증
 
@@ -97,6 +100,7 @@
 ```
 
 - `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
+- `dataset`은 `metadata.json` 중 `version`, `labels`, `stats`, `files`만 담습니다(허용 목록). seed·분할 설정 등 다른 키는 공개하지 않습니다. `stats`도 `classes`, `train`, `test`만 남깁니다. 클래스별 전체 개수(`samples_per_class`)는 학습과 평가를 합친 값이라, 공개된 학습 데이터를 빼면 숨긴 평가 데이터의 클래스 분포가 드러나므로 공개하지 않습니다. `files`도 내려받을 수 있는 파일만 남깁니다.
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
 - 운영 설정(`count_failed`, `final_selection`)은 이 응답에 넣지 않습니다. 확정된 제출 차감 기준을 적용하려면 관리자 설정 `count_failed`를 켜 둡니다.
@@ -109,7 +113,7 @@
  "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
 ```
 
-`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`, `example`(임시 이름)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
+`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`과 공개 예제 `example-input`(`example_input.csv`), `example-features`(`example_features.csv`), `example-structures`(`example_structures.zip`), `example-output`(`example_output.csv`)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
 
 `GET /resources/baseline`은 데이터 없이 코드만 담은 베이스라인 ZIP입니다. 대회 기간과 상관없이 받을 수 있지만, 코드에 대회 주제가 드러나므로 `LAUNCH_AT` 전에는 관리자만 받고 나머지는 403입니다.
 
@@ -119,7 +123,7 @@
 
 ```json
 {"id": 41, "filename": "code.zip", "status": "queued", "failure_code": null, "error_message": null,
- "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
+ "failure_detail": null, "public_score": null, "counted": true, "size_bytes": 18342211, "sha256": "…", "file_deleted": false, "evaluator": null,
  "queue_position": 3, "created_at": "…", "started_at": null, "finished_at": null,
  "used": 4, "limit": 20, "remaining": 16}
 ```
@@ -130,7 +134,7 @@
 {"entries": [{"id": 41, "…": "위와 같음", "submitted_by": "Team 03"}], "used": 4, "limit": 20, "remaining": 16}
 ```
 
-`GET /submissions/{id}`: 자기 팀 제출 하나(상태 확인용). Private 점수는 참가자 응답 어디에도 없습니다.
+`GET /submissions/{id}`: 자기 팀 제출 하나(상태 확인용). 관리자는 모든 팀의 제출을 볼 수 있습니다. Private 점수는 참가자 응답 어디에도 없습니다.
 
 ### 횟수 규칙
 
@@ -138,6 +142,7 @@
 - **접수된 시점에 1회 사용**합니다(`counted: true`). 접수 단계에서 거절된 업로드는 사용하지 않습니다.
 - 채점 실패 시: ZIP 규격 위반(`zip_invalid`)과 서버 오류(`system_error`)는 항상 `counted: false`입니다. 나머지 실패는 1회 차감합니다(관리자 설정 `count_failed`, 기본 켜짐. 끄면 모든 실패가 미차감).
 - 같은 팀의 여러 계정이 동시에 올려도 팀 행을 잠그고 세므로 상한을 넘지 않습니다.
+- 다시 채점: 자동으로 미차감된 제출(`zip_invalid`·`system_error`, 또는 `count_failed`가 꺼져 있을 때의 실패)은 `counted: true`로 돌아가 결과에 따라 다시 판정합니다. 관리자가 횟수 복구로 `counted: false`로 만든 제출은 그대로입니다. 팀 한도는 확인하지 않습니다.
 
 ## 관리자
 
@@ -150,7 +155,7 @@
 | `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
 | `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
 | `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경 |
-| `POST /admin/users` `{"team_id","username"?}` | 계정 발급. `username`을 빼면 랜덤 10자리. 응답의 `temporary_password`는 **이때만** 나옴 |
+| `POST /admin/users` `{"team_id","username"?,"display_name"?}` | 계정 발급. `username`을 빼면 랜덤 10자리, `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴 |
 | `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급 |
 | `PATCH /admin/users/{id}` `{"banned"}` | 차단·해제 |
 | `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함 |
@@ -159,7 +164,7 @@
 | `GET /admin/files/{id}/download` | ZIP 내려받기(재현 심사용). 조작 기록에 남음 |
 | `POST /admin/files/{id}/delete` `{"reason"}` | ZIP 삭제. 기록은 남고 파일만 지움 |
 | `POST /admin/files/verify` | DB 기록과 디스크 비교. 아무것도 바꾸지 않음 |
-| `POST /admin/submissions/{id}/requeue` | 실패한 제출을 다시 채점 |
+| `POST /admin/submissions/{id}/requeue` | 실패한 제출을 다시 채점(저장된 ZIP이 있어야 함). `counted` 처리는 위 횟수 규칙 |
 | `PATCH /admin/submissions/{id}` `{"counted"}` | 제출 횟수 복구·차감 |
 | `POST /admin/leaderboard/recalculate` | 저장된 점수로 Public 순위 다시 만들기 |
 | `POST /admin/leaderboard/finalize` | 최종 순위 공개. 대회가 닫혀 있고 대기열이 비어야 함 |
@@ -185,7 +190,7 @@ ZIP 내용은 디스크(`submissions` 볼륨)에, 파일 정보는 `submission_f
 ## 순위 규칙
 
 - Public 순위: 팀별 최고 Public 점수. 채점 성공 직후 갱신(동결 중이면 해제 때 갱신).
-- 동점: 점수가 기록된 시각이 빠른 쪽, 그다음 접수 ID가 작은 쪽.
+- 동점 `(확정)`: 제출 ZIP(압축 파일) 크기가 작은 쪽, 그다음 먼저 접수한 쪽(접수 시각, 같으면 접수 ID). 팀 안에서 대표 제출(Public·최종 순위, ZIP 보관)을 고를 때와 팀끼리 순위를 정할 때 같은 기준을 씁니다(`app/leaderboard.py`의 `_rank_key`).
 - 최종 순위 `(확정, Q7)`: Public 최고 제출물의 Private 점수. 설정 `final_selection=best_public`(기본값)입니다. `best_private`(Private 최고 제출물)는 쓰지 않습니다.
 - 다른 평가기로 채점된 제출은 순위에 넣지 않습니다. mock 점수가 실제 순위에 섞이지 않습니다.
 
@@ -232,4 +237,4 @@ code.zip
 2. 진입점 형태: 위의 `--input/--output` 인자 방식으로 고정해도 되는가.
 3. 채점 이미지의 기본 패키지(`apps/evaluator/requirements.txt`)와 미리 받아 둘 89개 목록(`runtime/requirements-competition.lock.txt`). 목록을 바꾸면 사본을 갱신하고 이미지를 다시 빌드합니다. 목록 밖 패키지도 설치는 되지만 PyPI에서 받으므로 느립니다.
 4. `metadata.json`에 `version`과 `validation`(검증 통과 여부)을 넣어 줄 수 있는가. 관리자 데이터 화면이 이 값을 읽습니다.
-5. 작은 공개 예제 입출력 파일의 이름. 지금은 `example_io.zip`으로 가정했습니다.
+5. ~~작은 공개 예제 입출력 파일의 이름.~~ → 데이터팀이 만든 `example_input.csv`, `example_features.csv`, `example_structures.zip`, `example_output.csv`를 그대로 내려줍니다.

@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import timedelta
 
 import pandas as pd
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from app.evaluators.base import Evaluator, Outcome
 from app.evaluators.mock import MockEvaluator
 from app.leaderboard import rebuild
-from app.models import LeaderboardEntry, Settings, Submission, Team, User, Worker, now
+from app.models import LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now
 from app.worker import process_one, recover_stale
 from conftest import add_account, login, make_zip, upload
 from test_api import HIDDEN_FIELDS, PARTICIPANT_PATHS
@@ -20,10 +21,13 @@ def mock_zip(**controls):
     return make_zip(extra={"mock.json": json.dumps(controls)})
 
 
-def scored(db, user, public, private, seconds=0, evaluator="mock"):
+def scored(db, user, public, private, seconds=0, evaluator="mock", zip_bytes=None):
     stamp = now() + timedelta(seconds=seconds)
     row = Submission(user_id=user["id"], team_id=user["team_id"], filename="code.zip", status="succeeded",
                      public_score=public, private_score=private, evaluator=evaluator, created_at=stamp, finished_at=stamp)
+    if zip_bytes is not None:
+        row.file = SubmissionFile(team_id=user["team_id"], uploaded_by=user["id"], original_filename="code.zip",
+                                  storage_key=uuid.uuid4().hex, sha256="0" * 64, size_bytes=zip_bytes, created_at=stamp)
     db.add(row)
     db.flush()
     return row
@@ -118,6 +122,18 @@ def test_server_faults_never_use_an_attempt_and_can_be_requeued(client, db, part
     assert client.patch(f"/api/admin/submissions/{submitted['id']}", json={"counted": False}).json()["used"] == 0
     actions = {entry["action"] for entry in client.get("/api/admin/audit").json()}
     assert {"submission.requeue", "submission.counted"} <= actions
+
+
+def test_requeue_keeps_an_attempt_the_organizer_gave_back(client, db, participant, organizer):
+    submitted = upload(client, mock_zip(fail="runtime_error")).json()
+    assert process_one(db, MOCK, "worker-a").counted is True
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/submissions/{submitted['id']}", json={"counted": False}).json()["used"] == 0
+    assert client.post(f"/api/admin/submissions/{submitted['id']}/requeue").status_code == 200
+    db.expire_all()
+    assert db.get(Submission, submitted["id"]).counted is False
+    assert process_one(db, MOCK, "worker-a").counted is False
+    assert client.get("/api/admin/teams").json()[0]["used"] == 0
 
 
 def test_restart_recovers_running_submissions(client, db, participant):
@@ -240,7 +256,7 @@ def test_ban_removes_team_from_board(client, db, participant, organizer):
     assert client.get("/api/auth/me").status_code == 403
 
 
-def test_ties_go_to_the_earlier_score_and_teams_appear_once(client, db, participant):
+def test_ties_go_to_the_earlier_submission_and_teams_appear_once(client, db, participant):
     mate = add_account(db, participant["team_name"], "teammate")
     other = add_account(db, "Other team", "otherteam")
     scored(db, participant, 0.8, 0.5, seconds=5)
@@ -252,6 +268,25 @@ def test_ties_go_to_the_earlier_score_and_teams_appear_once(client, db, particip
     entries = client.get("/api/leaderboard").json()["entries"]
     assert [(e["rank"], e["team"], e["score"], e["submissions"]) for e in entries] == [
         (1, "Other team", 0.8, 1), (2, participant["team_name"], 0.8, 2)]
+
+
+def test_ties_go_to_the_smaller_zip_then_the_earlier_submission(client, db, participant):
+    from app.files import best_public_id
+    other = add_account(db, "Other team", "otherteam")
+    third = add_account(db, "Third team", "thirdteam")
+    scored(db, participant, 0.8, 0.1, seconds=1, zip_bytes=900)
+    smaller = scored(db, participant, 0.8, 0.9, seconds=4, zip_bytes=500)  # later, but the smaller ZIP
+    scored(db, other, 0.8, 0.5, seconds=0, zip_bytes=700)                  # earliest, but a bigger ZIP
+    scored(db, third, 0.8, 0.5, seconds=2, zip_bytes=500)                  # same size, submitted earlier
+    rebuild(db)
+    db.commit()
+    entries = client.get("/api/leaderboard").json()["entries"]
+    assert [e["team"] for e in entries] == ["Third team", participant["team_name"], "Other team"]
+    # The team's representative submission (kept ZIP, final submission) follows the same rule.
+    assert best_public_id(db, participant["team_id"]) == smaller.id
+    rebuild(db, "private")
+    assert db.scalar(select(LeaderboardEntry.score).where(
+        LeaderboardEntry.board == "private", LeaderboardEntry.team_id == participant["team_id"])) == 0.9
 
 
 @pytest.mark.parametrize("selection,expected", [
@@ -281,3 +316,26 @@ def test_final_board_follows_the_configured_rule(client, db, participant, organi
     assert [(e["team"], e["score"]) for e in final] == expected
     assert client.patch("/api/admin/competition", json={"is_open": True}).status_code == 409
     assert client.patch(f"/api/admin/users/{participant['id']}", json={"banned": True}).status_code == 409
+
+
+def test_worker_waits_while_the_contract_and_dataset_disagree(db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from prediction_validator import load_contract
+    from app import worker
+    from app.config import PREDICTION_CONTRACT
+    from app.scoring.predictions import contract_problem
+
+    expected = load_contract(PREDICTION_CONTRACT).expected_rows
+    assert contract_problem([f"TEST_{i:06d}" for i in range(expected)]) is None
+
+    class Docker(Evaluator):
+        name = "docker"
+
+    # The test labels have 4 evaluation IDs, not the contract's expected_rows.
+    monkeypatch.setattr(worker, "get_evaluator", Docker)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=db.get_bind(), expire_on_commit=False))
+    monkeypatch.setenv("WORKER_NAME", "contract-check")
+    upload_free = db.scalar(select(Submission.id))
+    worker.run_forever(once=True)
+    row = db.get(Worker, "contract-check")
+    assert row.ready is False and "E903" in row.detail and upload_free is None

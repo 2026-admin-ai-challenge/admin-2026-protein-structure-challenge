@@ -40,7 +40,7 @@ async def protection(request, call_next):
         try:
             length = int(request.headers.get("content-length", "0"))
         except ValueError:
-            return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
+            return JSONResponse({"detail": "Invalid Content-Length", "code": "bad_request"}, status_code=400)
         # Only the ZIP upload may be large; it also counts bytes while streaming.
         upload = request.method == "POST" and request.url.path == "/api/submissions"
         if length > (MAX_ZIP_BYTES if upload else MAX_JSON_BYTES):

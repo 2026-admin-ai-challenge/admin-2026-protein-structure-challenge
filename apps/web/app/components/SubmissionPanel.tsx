@@ -146,8 +146,9 @@ export default function SubmissionPanel({
       {competition?.zip_retention === "best_public" && (
         <p className="body-copy">
           채점 후에는 팀의 최고 Public 점수 ZIP을 보관합니다. 신기록이 나오면
-          이전 ZIP을 교체하며, 동점이면 기존 최고 제출을 유지합니다. 정리된
-          ZIP의 제출 기록과 점수는 남습니다.
+          이전 ZIP을 교체하며, 점수가 같으면 ZIP이 더 작은 제출을, 크기도
+          같으면 먼저 제출한 것을 보관합니다. 정리된 ZIP의 제출 기록과 점수는
+          남습니다.
         </p>
       )}
       {!user ? (

@@ -7,7 +7,7 @@
 | `gateway` | nginx. 유일한 입구(포트 3000). 화면은 `web`으로, `/api`는 `api`로 직접 전달 | — |
 | `web` | Next.js 화면 | — |
 | `api` | 인증, 접수, 조회, 관리자 API | DB, 참가자 공개 데이터(읽기 전용), 제출 ZIP 저장소(쓰기) |
-| `worker` | 대기열 채점 | DB, 제출 ZIP 저장소(읽기 전용). 실제 채점 시 Docker 소켓, 숨긴 정답 |
+| `worker` | 대기열 채점 | DB, 제출 ZIP 저장소(읽기·삭제: 보관 정책에 따른 정리). 실제 채점 시 Docker 소켓, 숨긴 정답 |
 | `postgres` | 계정·팀·제출·점수·순위·조작 기록 | — |
 
 제출 ZIP은 Docker 볼륨 `submissions`에 있고 웹으로 공개되는 경로가 아닙니다. 숨긴 정답은 `api`에 연결하지 않습니다.
@@ -53,7 +53,7 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 
 ### 격리 내용
 
-참가자 컨테이너는 `--network none`, 읽기 전용 루트, 사용자 65534, 모든 capability 제거, `no-new-privileges`, 프로세스·CPU·메모리 제한, `/tmp`만 쓰기 가능으로 실행합니다. 마운트는 제출 내용(읽기 전용), 평가 입력(읽기 전용), 출력 디렉터리 하나, 그리고 `requirements.txt`가 패키지를 요구한 경우 패키지 볼륨(읽기 전용)뿐입니다. 10분을 넘으면 worker가 강제 종료하고, worker가 죽어도 컨테이너 안의 타이머가 종료시킵니다. 출력 디렉터리가 5 MB를 넘어도 종료합니다.
+참가자 컨테이너는 `--network none`, 읽기 전용 루트, 사용자 65534, 모든 capability 제거, `no-new-privileges`, 프로세스·CPU·메모리 제한, `/tmp`만 쓰기 가능으로 실행합니다. 마운트는 제출 내용(읽기 전용), 평가 입력(읽기 전용), 출력 디렉터리 하나, 그리고 `requirements.txt`가 패키지를 요구한 경우 패키지 볼륨(읽기 전용)뿐입니다. 10분을 넘으면 worker가 강제 종료하고, worker가 죽어도 컨테이너 안의 타이머가 종료시킵니다. 출력 디렉터리가 예측 계약의 파일 크기 상한(`output.max_file_bytes`, 현재 10 MB)을 넘어도 종료합니다.
 
 패키지 설치 컨테이너도 같은 제한으로 실행하며, 마운트는 그 제출의 패키지 볼륨(`admin-eval-env-<시각>-<제출>-<난수>`)뿐입니다. 제출 내용과 평가 입력은 보지 않고, worker가 `requirements.txt`를 해석해 다시 쓴 요구사항만 인자로 받습니다. 먼저 `--network none`으로 이미지 안의 wheel만 써서 설치하고, 실패할 때만 기본 bridge 네트워크로 다시 실행해 PyPI에서 받습니다(이때만 공유 캐시 볼륨 `admin-eval-pip-cache`도 붙음). wheel만 받으므로 네트워크가 열린 동안 실행되는 것은 pip뿐입니다. 받은 패키지의 코드는 네트워크 없는 추론 컨테이너에서만 실행됩니다. 패키지 볼륨은 채점이 끝나면 지우고, worker가 죽어 남은 볼륨은 다음 채점 때 정리합니다(`docker volume ls --filter name=admin-eval-env-`로 확인). 캐시가 커지면 대회 중이 아닐 때 `docker volume rm admin-eval-pip-cache`로 지웁니다.
 
@@ -172,13 +172,29 @@ ssh evaluator@<GPU 서버> 'sh admin-eval-setup/setup-server.sh --root "$HOME/ad
 - 접속 계정이 root가 아니면 제출 코드는 접속 계정 권한으로 실행됩니다.
 - 메모리·CPU 제한(cgroup)은 쓰지 않습니다. 시간·출력 크기·프로세스 수 제한과 컨테이너 전체의 메모리 제한만 남습니다. 점검은 bwrap·user namespace·cgroup 항목을 건너뛰고, 실제 점검 프로그램으로 평가 입력과 GPU만 확인합니다.
 - 손으로 점검하려면 `python -m app.evaluators.sandbox --no-isolation`을 실행합니다.
+## CI 자동 배포
+
+`main`에 push(머지)되면 GitHub Actions [`deploy.yml`](../.github/workflows/deploy.yml)이 웹 서버에 배포합니다. Actions 화면에서 수동으로 실행할 수도 있습니다.
+
+1. `api`, `worker`, `web` 이미지를 빌드해 `ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/<이름>`에 `latest`와 커밋 SHA 태그로 올립니다. 서버(1 OCPU)에서는 빌드하지 않습니다.
+2. 서버에 SSH로 접속해 `docker-compose.yml`, `docker-compose.ghcr.yml`, `deploy/nginx.conf`를 `~/admin-2026-protein-structure-challenge/`에 복사하고, 두 compose 파일로 `pull`과 `up -d`를 실행한 뒤 오래된 이미지를 지웁니다. 서버의 `.env`는 바꾸지 않습니다.
+3. 저장소 secrets `DEPLOY_KEY`(SSH 개인 키)와 `DEPLOY_HOST`가 필요합니다. 레지스트리 로그인은 작업마다 발급되는 토큰으로 하고 끝나면 로그아웃합니다.
+
+이 배포에는 `docker-compose.evaluator.yml`이 들어가지 않습니다. 서버 `.env`에 `EVAL_SSH_HOST`가 있으면 `docker-compose.remote.yml`을 얹어 원격 GPU 채점으로 실행하고(위 "설정" 4번), 없으면 `EVALUATOR=mock`으로 실행됩니다. 같은 서버에서 Docker 평가기를 켜 두면 다음 머지 때 api·worker가 mock 설정으로 다시 만들어집니다.
+
+같은 이미지를 손으로 받으려면 처음 한 번 `docker login ghcr.io`(read:packages 토큰)를 한 뒤 다음을 실행합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
 
 ## HTTPS 운영
 
 - `.env`의 `SECRET_KEY`와 `POSTGRES_PASSWORD`를 새 난수로 바꿉니다. URL에 들어가는 비밀번호는 영숫자를 쓰거나 URL 인코딩합니다.
 - TLS 리버스 프록시를 `gateway`의 3000 포트 앞에 두고 정확한 `APP_ORIGIN`, `COOKIE_SECURE=true`를 설정합니다. `gateway`는 기본으로 loopback에만 열려 있습니다.
 - **앞단 프록시의 요청 본문 한도를 ZIP 상한(500 MB)보다 크게** 잡고, 업로드가 끝날 때까지 끊기지 않게 요청 시간 제한을 늘립니다. 한도가 작으면 큰 ZIP이 접수되지 않습니다. 대회 전에 실제 크기의 파일로 올려 봅니다.
-- 앱은 전달된 `X-Forwarded-For`를 신뢰하지 않습니다. 로그인 시도 제한은 아이디별로 분당 10회입니다.
+- 앱은 전달된 `X-Forwarded-For`를 신뢰하지 않습니다. 로그인 시도 제한은 아이디별로 분당 10회입니다(관리자 계정은 제한 없음).
 - Linux에서 데이터 디렉터리는 컨테이너 UID 10001이 읽을 수 있어야 합니다(실제 채점 모드의 worker는 root로 실행).
 
 ## 데이터 공개 정책
@@ -199,6 +215,7 @@ ssh evaluator@<GPU 서버> 'sh admin-eval-setup/setup-server.sh --root "$HOME/ad
 | `ZIP_REQUIRED` | `inference.py,train.py,requirements.txt,model/` | **임시**. 데이터팀과 확정 |
 | `EVAL_INSTALL_TIMEOUT_SECONDS` | 600 | 제출 패키지 설치 제한(오프라인·온라인 합계). 추론 시간과 따로 셈 |
 | `EVAL_PIP_CACHE_VOLUME` | `admin-eval-pip-cache` | PyPI에서 받은 파일의 공유 캐시 볼륨. 빈 값이면 캐시 안 함 |
+| `EVAL_MAX_OUTPUT_BYTES` | 예측 계약의 `output.max_file_bytes`(10 MB) | 추론 출력 디렉터리 상한. 비우면 계약 값을 따름 |
 | `EVALUATOR` | `mock` | compose 파일이 정함. `.env`로 바꾸지 않음 |
 
 `ZIP_RETENTION=keep_all`로 전부 보관할 때 ZIP 저장 공간 상한의 단순 추정은 `팀 수 × 20 × 압축 ZIP 한도`입니다. 현재 코드 한도 524,288,000 bytes와 30팀이면 약 314.6 GB(292.97 GiB)이며 DB·출력·패키지 볼륨·공유 pip 캐시·백업 공간은 별도입니다. 기본 `best_public`은 보존 대상 외 완료 ZIP을 정리하지만, 대기·실행·서버 오류·동결 리더보드 참조 ZIP이 추가로 남으므로 팀당 1개만 남는다고 용량을 잡지 않습니다.

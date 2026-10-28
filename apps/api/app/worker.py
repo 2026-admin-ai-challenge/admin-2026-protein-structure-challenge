@@ -26,7 +26,7 @@ from .evaluators import get_evaluator
 from .evaluators.base import failure
 from .leaderboard import rebuild
 from .models import Settings, Submission, Worker, now
-from .scoring.predictions import OutputRejected, check
+from .scoring.predictions import OutputRejected, check, contract_problem
 from .scoring.scorer import score
 
 log = logging.getLogger("worker")
@@ -193,10 +193,15 @@ def run_forever(once=False):
                 if ok and not labels_checked:
                     try:
                         from .dataset import answers
-                        answers()
-                        labels_checked = True
+                        labels, _ = answers()
                     except Exception as error:
                         ok, detail = False, f"hidden labels unavailable: {error}"
+                    else:
+                        problem = contract_problem(labels.id.tolist())
+                        if problem:
+                            ok, detail = False, problem
+                        else:
+                            labels_checked = True
                 recover_stale(db)
                 settings = db.scalar(select(Settings).where(Settings.id == 1).with_for_update())
                 files.mark_unneeded(db, settings)
