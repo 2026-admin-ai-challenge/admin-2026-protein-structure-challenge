@@ -11,9 +11,12 @@ RUN useradd --create-home --uid 10001 challenge \
 WORKDIR /srv/apps/api
 
 # Scoring worker: same code, separate process. The docker CLI is only used when
-# EVALUATOR=docker (see docker-compose.evaluator.yml); the API image never has it.
+# EVALUATOR=docker (see docker-compose.evaluator.yml); the ssh client only when
+# EVALUATOR=remote (docker-compose.remote.yml). The API image never has either.
 FROM base AS worker
 COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client \
+ && rm -rf /var/lib/apt/lists/*
 USER challenge
 CMD ["python","-m","app.worker"]
 

@@ -1,0 +1,73 @@
+# Real scoring on a GPU machine reached over SSH. Add this file instead of
+# docker-compose.evaluator.yml (never both):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.remote.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.remote.yml up -d
+#
+# The worker unpacks and checks each submission, copies it to the GPU machine over SSH,
+# runs it there, fetches predictions.csv back and scores it here against the hidden
+# labels. The labels never leave this machine, and there is NO Docker socket here.
+# EVAL_REMOTE_EVALUATOR says how it runs there:
+#   sandbox (default)  bubblewrap sandboxes, for a machine without Docker. Its scoring
+#                      environment is made once by apps/evaluator/setup-server.sh.
+#   remote             the same locked-down containers as docker-compose.evaluator.yml.
+# docs/deployment.md lists what the GPU machine needs; the worker checks it on the first
+# connection and cancels it, saying why, if something is missing.
+#
+# Requires in .env: EVAL_SSH_HOST, EVAL_SSH_USER, EVAL_REMOTE_WORK_DIR, EVAL_REMOTE_INPUT_DIR,
+# EVAL_SSH_KEY_FILE and EVAL_SSH_KNOWN_HOSTS_FILE; EVAL_SANDBOX_ROOT for sandbox, and
+# EVAL_GPUS for remote (optional for sandbox: empty runs on the CPU).
+services:
+  api:
+    environment:
+      EVALUATOR: ${EVAL_REMOTE_EVALUATOR:-sandbox}
+  worker:
+    environment:
+      EVALUATOR: ${EVAL_REMOTE_EVALUATOR:-sandbox}
+      EVAL_SSH_HOST: ${EVAL_SSH_HOST:?set EVAL_SSH_HOST to the GPU machine address}
+      EVAL_SSH_PORT: ${EVAL_SSH_PORT:-22}
+      EVAL_SSH_USER: ${EVAL_SSH_USER:?set EVAL_SSH_USER to the account on the GPU machine}
+      EVAL_SSH_ALLOWED: ${EVAL_SSH_ALLOWED:-}
+      # GPU indexes as nvidia-smi numbers them, or all. The worker refuses an empty value
+      # for remote, and runs sandboxes on the CPU with it.
+      EVAL_GPUS: ${EVAL_GPUS:-}
+      # sandbox: the --root given to setup-server.sh, and whether to require cgroup limits.
+      EVAL_SANDBOX_ROOT: ${EVAL_SANDBOX_ROOT:-}
+      EVAL_SANDBOX_LIMITS: ${EVAL_SANDBOX_LIMITS:-cgroup}
+      # sandbox with isolation turned off on the admin page, as root: the uid steps run as.
+      EVAL_SANDBOX_RUN_UID: ${EVAL_SANDBOX_RUN_UID:-64000}
+      # remote only. Built by .github/workflows/evaluator-image.yml. Pin a commit tag in .env so
+      # the scoring environment cannot change in the middle of the competition.
+      EVAL_IMAGE: ${EVAL_IMAGE:-ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/evaluator:latest}
+      EVAL_COMMAND: ${EVAL_COMMAND:-python inference.py --input /input/test_features.csv --output /output/predictions.csv}
+      EVAL_CPUS: ${EVAL_CPUS:-4}
+      EVAL_MEMORY: ${EVAL_MEMORY:-8g}
+      EVAL_PIDS: ${EVAL_PIDS:-256}
+      EVAL_TMPFS_SIZE: ${EVAL_TMPFS_SIZE:-1g}
+      EVAL_UPLOAD_TIMEOUT_SECONDS: ${EVAL_UPLOAD_TIMEOUT_SECONDS:-900}
+      # Here: where submissions are unpacked before they are copied.
+      EVAL_WORK_DIR: /srv/eval-work
+      # On the GPU machine: where copies are placed, and the evaluation input (no labels).
+      EVAL_WORK_HOST_DIR: ${EVAL_REMOTE_WORK_DIR:?set EVAL_REMOTE_WORK_DIR to a directory on the GPU machine}
+      EVAL_INPUT_HOST_DIR: ${EVAL_REMOTE_INPUT_DIR:?set EVAL_REMOTE_INPUT_DIR to the evaluation input directory on the GPU machine}
+    volumes:
+      - eval-scratch:/srv/eval-work
+      # Private key and known_hosts: files readable only by uid 10001 (chown 10001 + chmod 600 for
+      # the key). A missing file is an error, never an empty directory created in its place.
+      - type: bind
+        source: ${EVAL_SSH_KEY_FILE:?set EVAL_SSH_KEY_FILE to the private key file}
+        target: /run/secrets/eval_ssh_key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EVAL_SSH_KNOWN_HOSTS_FILE:?set EVAL_SSH_KNOWN_HOSTS_FILE to the known_hosts file}
+        target: /run/secrets/eval_known_hosts
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${DATA_HOST_DIR:-../admin-2026-protein-data/data}/public:/srv/data/public:ro
+      # Hidden labels and the Public/Private split: readable by the worker only.
+      - ${DATA_HOST_DIR:-../admin-2026-protein-data/data}/private:/srv/data/private:ro
+volumes:
+  eval-scratch:

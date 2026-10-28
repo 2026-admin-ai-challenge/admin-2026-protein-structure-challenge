@@ -158,6 +158,29 @@ def test_result_of_a_worker_that_lost_its_job_is_dropped(client, db, participant
     assert row.status == "running" and row.public_score is None
 
 
+def test_the_worker_hands_the_settings_to_its_evaluator_before_each_check(db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from app import worker
+
+    seen = []
+
+    class Watching(Evaluator):
+        name = "mock"
+
+        def configure(self, settings):
+            seen.append(settings.eval_isolation)
+
+        def ready(self):
+            return False, "waiting"
+
+    db.get(Settings, 1).eval_isolation = False
+    db.commit()
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=db.get_bind(), expire_on_commit=False))
+    monkeypatch.setattr(worker, "get_evaluator", Watching)
+    worker.run_forever(once=True)
+    assert seen == [False] and db.scalars(select(Worker)).one().detail == "waiting"
+
+
 def test_real_predictions_are_scored_against_hidden_labels(client, db, participant):
     labels = pd.DataFrame({"id": ["T1", "T2", "T3", "T4"], "label": ["a", "b", "a", "b"],
                            "partition": ["public", "public", "private", "private"]})

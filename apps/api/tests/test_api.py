@@ -172,6 +172,18 @@ def test_csrf_and_login_rate_limit(client):
     assert client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"}).status_code == 429
 
 
+def test_scoring_isolation_is_on_until_an_organizer_turns_it_off(client, db, organizer):
+    client.cookies.set("admin_session", organizer)
+    assert client.get("/api/admin/overview").json()["settings"]["eval_isolation"] is True
+    assert client.patch("/api/admin/competition", json={"eval_isolation": None}).status_code == 422
+    saved = client.patch("/api/admin/competition", json={"eval_isolation": False})
+    assert saved.status_code == 200 and saved.json()["eval_isolation"] is False and db.get(Settings, 1).eval_isolation is False
+    entry = db.scalars(select(AuditLog).where(AuditLog.action == "settings.update")).all()[-1]
+    assert "eval_isolation" in entry.detail
+    # Participants never see it.
+    assert "eval_isolation" not in json.dumps(client.get("/api/competition").json())
+
+
 def test_settings_validation_and_audit(client, db, organizer):
     settings = db.get(Settings, 1)
     settings.is_open, settings.start_time, settings.end_time = False, None, None

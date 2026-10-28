@@ -63,6 +63,9 @@ class Settings(Base):
     dataset_approved_by: Mapped[str | None] = mapped_column(String(254), nullable=True)
     dataset_files: Mapped[str | None] = mapped_column(Text, nullable=True)
     dataset_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # EVALUATOR=sandbox only: run each step in a bubblewrap sandbox (no network, no other
+    # files). Off runs it directly on the GPU machine, for one that forbids user namespaces.
+    eval_isolation: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Submission(Base):

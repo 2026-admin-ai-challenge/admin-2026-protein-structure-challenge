@@ -161,14 +161,14 @@ def rescore(db):
     """Recomputes every stored real score from saved predictions, e.g. after labels are corrected."""
     from .dataset import answers
 
-    if EVALUATOR != "docker":
-        raise SystemExit("rescore는 EVALUATOR=docker에서만 사용할 수 있습니다. mock 점수에는 예측 파일이 없습니다.")
+    if EVALUATOR == "mock":
+        raise SystemExit("rescore는 EVALUATOR=docker, remote 또는 sandbox에서만 사용할 수 있습니다. mock 점수에는 예측 파일이 없습니다.")
     labels, classes = answers()
     settings = db.scalar(select(Settings).where(Settings.id == 1).with_for_update())
     if settings.finalized:
         raise SystemExit("최종 순위 공개 후에는 점수를 다시 계산할 수 없습니다.")
     count = 0
-    for row in db.scalars(select(Submission).where(Submission.status == "succeeded", Submission.evaluator == "docker", Submission.predictions.is_not(None))):
+    for row in db.scalars(select(Submission).where(Submission.status == "succeeded", Submission.evaluator == EVALUATOR, Submission.predictions.is_not(None))):
         scores = score(labels, json.loads(row.predictions), classes)
         row.public_score, row.private_score = scores["public"], scores["private"]
         count += 1
@@ -182,11 +182,13 @@ def rescore(db):
 def run_forever(once=False):
     worker_id, evaluator = worker_name(), get_evaluator()
     log.info("worker %s started with evaluator=%s", worker_id, evaluator.name)
-    labels_checked = evaluator.name != "docker"  # the mock never reads hidden labels
+    labels_checked = evaluator.name == "mock"  # the mock never reads hidden labels
     while True:
         handled = None
         try:
             with SessionLocal() as db:
+                # Settings the organizers may change while the worker runs (EVALUATOR=sandbox: isolation).
+                evaluator.configure(db.get(Settings, 1))
                 ok, detail = evaluator.ready()
                 if ok and not labels_checked:
                     try:

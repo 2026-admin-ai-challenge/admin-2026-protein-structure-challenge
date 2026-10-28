@@ -82,7 +82,8 @@ export default function SettingsSection({ onChanged }: { onChanged: () => void }
             <div className={alive.some((w) => w.ready) ? "" : "warn"}>
               <small>채점 작업자</small>
               <strong>{alive.length}</strong>
-              <span>
+              {/* A cancelled remote connection lists one reason per line. */}
+              <span style={{ whiteSpace: "pre-line" }}>
                 {alive.length === 0
                   ? "응답하는 작업자가 없습니다. 제출은 대기열에 쌓입니다."
                   : alive.map((w) => w.detail).join(" · ")}
@@ -91,9 +92,51 @@ export default function SettingsSection({ onChanged }: { onChanged: () => void }
           </div>
           {data.evaluator === "mock" && (
             <div className="alert mock" role="note">
-              평가기: mock. 점수는 가짜입니다. 실제 대회는 EVALUATOR=docker로
-              실행하세요.
+              평가기: mock. 점수는 가짜입니다. 실제 대회는 EVALUATOR=docker
+              (이 서버), EVALUATOR=remote(Docker가 있는 원격 GPU 서버) 또는
+              EVALUATOR=sandbox(Docker 없는 원격 GPU 서버)로 실행하세요.
             </div>
+          )}
+          {data.evaluator === "sandbox" && (
+            <>
+              <h3>채점 격리</h3>
+              {settings.eval_isolation ? (
+                <p className="muted">
+                  켜짐. 제출 코드는 GPU 서버에서 샌드박스 안에서만 실행되어 네트워크와
+                  다른 파일에 접근할 수 없습니다. 서버가 샌드박스를 허용하지 않으면
+                  채점 작업자가 준비 안 됨으로 표시되고 그 이유를 보여 줍니다.
+                </p>
+              ) : (
+                <div className="alert error" role="note">
+                  꺼짐. 제출 코드가 GPU 서버에서 직접 실행됩니다. 네트워크를 막지 못해 외부
+                  모델·데이터를 내려받을 수 있고, 서버에서 읽을 수 있는 파일은 모두 읽을 수
+                  있습니다. 서버 관리자가 user namespace를 허용하면 다시 켜세요.
+                </div>
+              )}
+              <div className="admin-actions">
+                <button
+                  className="btn secondary"
+                  disabled={busy || settings.finalized}
+                  onClick={() => {
+                    if (
+                      settings.eval_isolation &&
+                      !confirm(
+                        "격리를 끄면 제출 코드가 네트워크와 GPU 서버의 파일에 접근할 수 있습니다. 다음 채점부터 적용됩니다. 끌까요?",
+                      )
+                    )
+                      return;
+                    change(
+                      { eval_isolation: !settings.eval_isolation },
+                      settings.eval_isolation
+                        ? "채점 격리를 껐습니다. 다음 채점부터 적용됩니다."
+                        : "채점 격리를 켰습니다. 서버 점검을 통과한 뒤 채점합니다.",
+                    );
+                  }}
+                >
+                  {settings.eval_isolation ? "Turn isolation off" : "Turn isolation on"}
+                </button>
+              </div>
+            </>
           )}
           <form
             className="admin-form"

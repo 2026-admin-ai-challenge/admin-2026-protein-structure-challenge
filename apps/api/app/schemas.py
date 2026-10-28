@@ -60,6 +60,7 @@ class SettingsPatch(BaseModel):
     count_failed: bool | None = None
     final_selection: Literal["best_public", "best_private"] | None = None
     frozen: bool | None = None
+    eval_isolation: bool | None = None
 
     @field_validator("start_time", "end_time")
     @classmethod

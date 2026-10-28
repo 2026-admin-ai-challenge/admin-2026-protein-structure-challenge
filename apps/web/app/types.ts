@@ -15,7 +15,7 @@ export type User = {
   role: string;
 };
 export type SubmissionStatus = "queued" | "running" | "succeeded" | "failed";
-export type Evaluator = "mock" | "docker";
+export type Evaluator = "mock" | "docker" | "remote" | "sandbox";
 export type Submission = {
   id: number;
   filename: string;
@@ -75,6 +75,8 @@ export type Settings = {
 export type AdminSettings = Settings & {
   count_failed: boolean;
   final_selection: "best_public" | "best_private";
+  // EVALUATOR=sandbox only: bubblewrap sandboxes on the GPU machine, or none.
+  eval_isolation: boolean;
 };
 export type Limits = {
   zip_bytes: number;

@@ -26,3 +26,6 @@ var/
 # Account sheets hold plaintext temporary passwords for handing out.
 accounts/*
 !accounts/participants.example.csv
+
+# SSH key and known_hosts for the remote GPU evaluator (docker-compose.remote.yml).
+secrets/

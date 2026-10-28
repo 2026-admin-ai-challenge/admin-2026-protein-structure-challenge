@@ -10,3 +10,4 @@ work
 var
 accounts
 **/.pytest_cache
+secrets

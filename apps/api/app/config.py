@@ -63,10 +63,12 @@ WORKER_STALE_SECONDS = _int("WORKER_STALE_SECONDS", 120)
 # Prediction file contract shared with the data team (copied from admin-2026-protein-data).
 PREDICTION_CONTRACT = Path(__file__).resolve().parents[1] / "contract" / "prediction_contract.json"
 
-# "mock" produces fake scores for development. "docker" runs the real isolated inference.
+# "mock" produces fake scores for development. "docker" runs the real isolated inference
+# on this machine, "remote" runs the same containers on a GPU machine reached over SSH,
+# and "sandbox" runs it there in bubblewrap sandboxes, for a machine without Docker.
 EVALUATOR = os.getenv("EVALUATOR", "mock").lower()
 ZIP_RETENTION = os.getenv("ZIP_RETENTION", "best_public").lower()
 if ZIP_RETENTION not in {"best_public", "keep_all"}:
     raise RuntimeError("ZIP_RETENTION must be 'best_public' or 'keep_all'")
-if EVALUATOR not in {"mock", "docker"}:
-    raise RuntimeError("EVALUATOR must be 'mock' or 'docker'")
+if EVALUATOR not in {"mock", "docker", "remote", "sandbox"}:
+    raise RuntimeError("EVALUATOR must be 'mock', 'docker', 'remote' or 'sandbox'")
