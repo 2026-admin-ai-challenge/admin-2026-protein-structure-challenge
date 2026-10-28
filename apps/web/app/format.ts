@@ -24,3 +24,11 @@ export const megabytes = (bytes: number) =>
   Math.round(bytes / (1024 * 1024)).toLocaleString() + " MB";
 export const minutes = (seconds: number) =>
   seconds % 60 === 0 ? seconds / 60 + "분" : seconds + "초";
+export function duration(seconds?: number | null) {
+  if (seconds === undefined || seconds === null) return "—";
+  const tenths = Math.round(seconds * 10);
+  const rest = ((tenths % 600) / 10).toFixed(1);
+  return tenths < 600
+    ? rest + "초"
+    : Math.floor(tenths / 600) + "분 " + rest.padStart(4, "0") + "초";
+}

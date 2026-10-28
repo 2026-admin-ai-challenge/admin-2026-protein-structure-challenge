@@ -1478,14 +1478,15 @@ input {
   backdrop-filter: blur(6px);
   z-index: 100;
   display: flex;
-  align-items: center;
+  /* Top-anchored: a centered modal jumps when the login error makes it taller. */
+  align-items: flex-start;
   justify-content: center;
-  padding: 25px;
+  padding: max(25px, 14vh) 25px 25px;
 }
 .modal {
   position: relative;
   width: 445px;
-  max-height: 95vh;
+  max-height: 100%;
   overflow: auto;
   background: var(--bg);
   padding: 36px;
@@ -1515,6 +1516,10 @@ input {
 }
 .modal form .btn {
   margin-top: 8px;
+}
+/* The form gap already spaces the error; the page-level alert margin doubles it. */
+.modal form .alert {
+  margin: 0;
 }
 .auth-switch {
   display: block;

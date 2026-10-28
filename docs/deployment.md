@@ -80,6 +80,76 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
+## 서버 `.env` 수정
+
+운영 서버가 실제로 쓰는 `.env`는 서버 디스크의 `~/admin-2026-protein-structure-challenge/.env` 하나뿐입니다. 저장소의 `.env.example`은 템플릿이라 고쳐도 운영에 영향이 없고, 서버의 `.env`는 저장소에 올라가지 않습니다. CI 자동 배포는 compose 파일과 `deploy/nginx.conf`만 덮어쓰고 `.env`는 건드리지 않으므로, 한 번 고치면 다음 배포에도 유지됩니다. Compose는 compose 파일과 같은 디렉터리의 `.env`만 자동으로 읽습니다. 다른 이름으로 두면 읽지 않습니다.
+
+아래는 **웹 서버**(CI가 배포하는 그 서버) 기준입니다. `$dc`는 이 명령이고, **compose 파일 두 개를 항상 같이 지정합니다.** 하나만 쓰면 GHCR 이미지 대신 빌드를 시도합니다. 웹 서버에는 저장소가 없어 바로 실패하고, 저장소가 있는 장비에서는 1 OCPU 기준 30분이 걸리는 빌드가 시작됩니다.
+
+실채점 장비는 compose 조합이 다릅니다(`docker-compose.yml` + `docker-compose.evaluator.yml`). 그 장비에서 아래 `$dc`를 쓰면 `api`와 `worker`가 `EVALUATOR=mock`으로 다시 만들어져 가짜 점수로 채점합니다. 실채점 장비에서는 `-f docker-compose.evaluator.yml`을 얹은 조합을 그대로 씁니다.
+
+```bash
+cd ~/admin-2026-protein-structure-challenge
+dc="docker compose -f docker-compose.yml -f docker-compose.ghcr.yml"
+```
+
+1. **현재 값 확인**. 비밀값을 화면에 남기지 않으려면 키 이름만 봅니다.
+   ```bash
+   cut -d= -f1 .env | grep -v '^#' | grep .
+   ```
+2. **백업**. `.env`가 깨지면 `api`와 `worker`가 뜨지 않습니다.
+   ```bash
+   cp .env .env.bak-$(date +%Y%m%d-%H%M)
+   ```
+3. **편집**(`nano .env`). `KEY=value` 형식이고 `=` 좌우에 공백을 넣지 않습니다. 따옴표는 붙이지 않고, 값 끝의 공백도 값에 포함됩니다. 줄 맨 앞 `#`은 주석이라 변수를 잠시 끌 때 씁니다. 값의 `$`는 변수로 해석되므로 비밀번호는 영숫자만 씁니다. 여러 줄 값은 지원하지 않습니다.
+4. **적용 전 검증**. `config`는 아무것도 바꾸지 않고 해석된 최종 값을 보여줍니다. 오타로 변수가 읽히지 않았다면 compose의 기본값이 보입니다. 전체를 출력하면 `SECRET_KEY`와 DB 비밀번호까지 찍히므로 필요한 줄만 봅니다.
+   ```bash
+   $dc config | grep -i launch_at
+   ```
+5. **적용**. `up -d`는 설정이 바뀐 서비스만 다시 만듭니다. **`restart`로는 반영되지 않습니다**(환경변수는 컨테이너를 만들 때 주입됩니다).
+   ```bash
+   $dc up -d          # 또는 범위를 좁혀 $dc up -d web api
+   ```
+6. **확인**.
+   ```bash
+   $dc ps
+   curl -s localhost:3000/api/health
+   $dc logs --tail 50 api
+   ```
+7. **되돌리기**. 원인 파악보다 복구가 우선입니다.
+   ```bash
+   cp .env.bak-<시각> .env && $dc up -d
+   ```
+
+### 변수별 적용 범위
+
+| 변수 | 읽는 서비스 | 적용 |
+| --- | --- | --- |
+| `LAUNCH_AT` | web, api | `up -d web api`. 둘의 판단이 어긋나지 않게 같이 올립니다 |
+| `APPLY_URL` | web | `up -d web` |
+| `APP_ORIGIN`, `COOKIE_SECURE` | api | `up -d api` |
+| `MAX_ZIP_BYTES`, `MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, `ZIP_REQUIRED`, `ZIP_RETENTION`, `INFERENCE_TIMEOUT_SECONDS`, `WORKER_STALE_SECONDS` | api, worker | `up -d api worker` |
+| `MOCK_DELAY_SECONDS` | worker | `up -d worker` |
+| `DATA_HOST_DIR` | api(마운트 경로). 실채점 장비에서는 worker에도 `public`·`private`로 마운트됩니다 | `up -d api worker` |
+| `SECRET_KEY` | api, worker | **대회 중 바꾸지 않습니다.** 세션 쿠키(JWT) 서명 키라서 전원이 로그아웃됩니다 |
+| `POSTGRES_PASSWORD` | postgres, api, worker | **단독으로 바꾸지 않습니다.** Postgres는 DB를 처음 만들 때만 이 값을 쓰므로, `.env`만 고치면 접속 문자열만 바뀌어 인증에 실패합니다 |
+| `TEAM_SUBMISSION_LIMIT` | api | 새 DB의 초기값입니다. 운영 중에는 효과가 없고 관리자 화면에서 바꿉니다 |
+| `EVALUATOR` | — | compose가 정합니다. `.env`로 바꾸지 않습니다 |
+
+각 변수의 기본값과 의미는 [용량·환경변수](#용량환경변수)에 있습니다. 일정, 팀당 제출 횟수, 실패 차감, 최종 순위 기준, 동결은 `.env`가 아니라 관리자 화면 "현황·설정"에서 바꿉니다.
+
+### 잘못 적은 값
+
+- **바로 멈추는 값**: `SECRET_KEY`가 32자 미만, 숫자 변수에 숫자가 아닌 값, `ZIP_RETENTION`이 `best_public`·`keep_all` 외의 값이면 `api`와 `worker`가 시작하면서 사유를 로그에 적고 죽습니다(`app/config.py`). `$dc ps`에서 재시작을 반복하고 `/api/health`가 응답하지 않습니다.
+- **조용히 무시되는 값**: `LAUNCH_AT`의 형식이 틀리면 오류 없이 기본값(`2026-11-01T13:00:00+09:00`)으로 돌아갑니다. 오타로 주제가 미리 공개되지 않게 한 동작이라, "고쳤는데 그대로"일 때는 형식을 확인합니다.
+- **`LAUNCH_AT`은 반드시 정확한 ISO 8601로 적습니다**(예: `2026-11-01T13:00:00+09:00`). API는 `datetime.fromisoformat`만 받아들여 틀리면 기본값으로 돌아가지만, 웹은 더 관대한 `Date.parse`를 써서 `2026/11/15 13:00:00` 같은 값도 해석합니다. 두 값이 어긋나면 화면은 카운트다운인데 API는 열려 있어, `/api`로 직접 요청하면 주제를 알 수 있습니다(`gateway`는 `/api`를 Next.js를 거치지 않고 보냅니다). 바꾼 뒤에는 화면과 `/api`를 함께 확인합니다.
+- **`APPLY_URL`은 비워도 버튼이 사라지지 않습니다.** 빈 값이면 코드에 있는 기본 신청 주소로 돌아갑니다. 버튼을 없애려면 `https://`로 시작하지 않는 값을 넣어야 합니다(`app/launch.ts`).
+- 설정되지 않은 변수 이름은 오류 없이 무시됩니다. 쓰이는 변수만 효과가 있습니다.
+
+### 작업 시점
+
+`api`를 다시 만드는 동안 몇 초간 API 요청이 끊기고, 업로드 중인 ZIP은 실패합니다. 채점 중에 `worker`를 다시 만들면 그 제출은 `running`으로 남고 `WORKER_STALE_SECONDS`(120초) 뒤에 `queued`로 돌아가 다시 채점됩니다. 같은 제출이 세 번 중단되면 `system_error`가 되므로, 제출이 몰리는 시간과 채점 진행 중은 피합니다. `.env`에는 비밀값이 있으니 권한은 `chmod 600`으로 둡니다.
+
 ## HTTPS 운영
 
 - `.env`의 `SECRET_KEY`와 `POSTGRES_PASSWORD`를 새 난수로 바꿉니다. URL에 들어가는 비밀번호는 영숫자를 쓰거나 URL 인코딩합니다.

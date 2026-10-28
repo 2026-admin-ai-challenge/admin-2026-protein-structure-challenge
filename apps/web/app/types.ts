@@ -3,6 +3,7 @@ export type Entry = {
   rank: number;
   team: string;
   score: number;
+  grading_seconds: number | null;
   submissions: number;
   last_submission: string;
 };
@@ -24,6 +25,7 @@ export type Submission = {
   error_message: string | null;
   failure_detail?: string | null;
   public_score: number | null;
+  grading_seconds: number | null;
   counted: boolean;
   size_bytes: number | null;
   sha256: string | null;

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRight, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { User } from "../types";
@@ -13,7 +13,8 @@ export default function AuthModal({
   onSignedIn: (user: User) => void;
 }) {
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    password = useRef<HTMLInputElement>(null);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -28,6 +29,9 @@ export default function AuthModal({
       );
     } catch (e) {
       setError((e as Error).message);
+      // Ready for another try: typing replaces the rejected password.
+      password.current?.focus();
+      password.current?.select();
     } finally {
       setBusy(false);
     }
@@ -68,6 +72,7 @@ export default function AuthModal({
           <label>
             비밀번호
             <input
+              ref={password}
               name="password"
               type="password"
               required

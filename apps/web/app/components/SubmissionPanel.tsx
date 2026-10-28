@@ -4,7 +4,7 @@ import { ArrowRight, ArrowUpRight, Lock, Upload } from "lucide-react";
 import { ApiError, api, uploadZip } from "../lib/api";
 import { isPending } from "../lib/status";
 import SubmissionFailure from "./SubmissionFailure";
-import { date, fileSize, megabytes, minutes } from "../format";
+import { date, duration, fileSize, megabytes, minutes } from "../format";
 import type {
   Competition,
   Quota,
@@ -312,6 +312,7 @@ export default function SubmissionPanel({
                   <th>File</th>
                   <th>Status</th>
                   <th>Public Score</th>
+                  <th>채점 시간</th>
                   <th>Submitted at</th>
                 </tr>
               </thead>
@@ -348,11 +349,12 @@ export default function SubmissionPanel({
                       <td className="score">
                         {s.public_score?.toFixed(5) ?? "—"}
                       </td>
+                      <td>{duration(s.grading_seconds)}</td>
                       <td>{date(s.created_at)}</td>
                     </tr>
                     {s.status === "failed" && (
                       <tr className="submission-failure-row">
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <SubmissionFailure
                             submission={s}
                             admin={user.role === "ADMIN"}
