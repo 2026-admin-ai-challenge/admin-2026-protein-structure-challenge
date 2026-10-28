@@ -401,3 +401,21 @@ def test_worker_waits_while_the_contract_and_dataset_disagree(db, monkeypatch):
     worker.run_forever(once=True)
     row = db.get(Worker, "contract-check")
     assert row.ready is False and "E903" in row.detail and upload_free is None
+
+
+def test_rescore_reaches_every_real_evaluator(db, participant, monkeypatch):
+    from app import dataset, worker
+
+    labels = pd.DataFrame({"id": ["T1", "T2", "T3", "T4"], "label": ["a", "b", "a", "b"],
+                           "partition": ["public", "public", "private", "private"]})
+    monkeypatch.setattr(dataset, "answers", lambda: (labels, ["a", "b"]))
+    monkeypatch.setattr(worker, "EVALUATOR", "sandbox")
+    before = scored(db, participant, 0.0, 0.0, evaluator="docker")  # scored before a switch to sandbox
+    current = scored(db, participant, 0.0, 0.0, evaluator="sandbox")
+    fake = scored(db, participant, 0.9, 0.9)                          # mock: no predictions to rescore
+    before.predictions = current.predictions = json.dumps(["a", "b", "a", "b"])
+    db.commit()
+    assert worker.rescore(db) == 2
+    assert (before.public_score, before.private_score) == (1.0, 1.0)
+    assert (current.public_score, current.private_score) == (1.0, 1.0)
+    assert (fake.public_score, fake.private_score) == (0.9, 0.9)

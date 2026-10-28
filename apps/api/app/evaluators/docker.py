@@ -69,6 +69,11 @@ INSTALLER_LABEL = '{{index .Config.Labels "admin-eval.installer"}}'
 INSTALLER_VERSION = "1"
 DEPS, VENV, PIP_CACHE = "/deps", "/deps/venv", "/pip-cache"
 BASE_PATH = "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Runs the inference command inside the container and reports its own 125 or 255 as 1:
+# docker run exits with 125 when docker itself fails and ssh with 255 when the link does,
+# both the server's fault and not counted against the team, so a submission must not be
+# able to pass for either (like sandbox_launch.py).
+STEP_EXIT = '"$@"; c=$?; if [ "$c" -eq 125 ] || [ "$c" -eq 255 ]; then exit 1; fi; exit "$c"'
 # admin-eval-env-<unix time>-<submission>-<random>: the time lets abandoned volumes be found.
 VOLUME_PREFIX = "admin-eval-env-"
 VOLUME_TIME = re.compile(rf"^{VOLUME_PREFIX}(\d+)-")
@@ -129,7 +134,7 @@ def build_command(name, code_dir: Path, output_dir: Path, volume=None):
         IMAGE,
         # Second timer inside the container: it still stops if the worker dies mid-run.
         "timeout", "--signal=KILL", str(INFERENCE_TIMEOUT_SECONDS + KILL_GRACE_SECONDS),
-        *shlex.split(COMMAND),
+        "sh", "-c", STEP_EXIT, "sh", *shlex.split(COMMAND),
     ]
 
 

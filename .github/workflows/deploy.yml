@@ -90,7 +90,8 @@ jobs:
             # The key files are checked here so a typo stops the deploy before anything restarts.
             for name in EVAL_SSH_KEY_FILE EVAL_SSH_KNOWN_HOSTS_FILE; do
               # As compose reads .env: a ` # comment` after the value and quotes are not part of it.
-              file=$(grep -E "^$name=" .env | tail -n 1 | cut -d= -f2- \
+              # `|| true`: a missing line must reach the message below, not stop on grep's exit status.
+              file=$( (grep -E "^$name=" .env || true) | tail -n 1 | cut -d= -f2- \
                 | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' | tr -d "\"'")
               if [ -z "$file" ] || [ ! -f "$file" ]; then
                 echo "remote scoring: $name in .env must name an existing file (now: '$file')" >&2

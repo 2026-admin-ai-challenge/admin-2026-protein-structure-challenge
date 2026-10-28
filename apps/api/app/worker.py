@@ -168,7 +168,9 @@ def rescore(db):
     if settings.finalized:
         raise SystemExit("최종 순위 공개 후에는 점수를 다시 계산할 수 없습니다.")
     count = 0
-    for row in db.scalars(select(Submission).where(Submission.status == "succeeded", Submission.evaluator == EVALUATOR, Submission.predictions.is_not(None))):
+    # Every real evaluator's predictions, not only the current one's: they are the same CSV,
+    # and a label fix must reach submissions scored before a switch (docker -> sandbox, say).
+    for row in db.scalars(select(Submission).where(Submission.status == "succeeded", Submission.evaluator != "mock", Submission.predictions.is_not(None))):
         scores = score(labels, json.loads(row.predictions), classes)
         row.public_score, row.private_score = scores["public"], scores["private"]
         count += 1

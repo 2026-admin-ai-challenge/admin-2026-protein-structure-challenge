@@ -1,5 +1,7 @@
 import io
 import stat
+import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -90,6 +92,24 @@ def test_container_is_isolated(monkeypatch, tmp_path):
         assert flag in joined
     assert "docker.sock" not in joined and "labels" not in joined and "DATABASE_URL" not in joined
     assert command[command.index("timeout") + 2] == "615"  # in-container timer: 10 minutes plus grace
+    timer = command.index("timeout")
+    assert command[timer + 3:timer + 7] == ["sh", "-c", docker_evaluator.STEP_EXIT, "sh"]
+    assert command[timer + 7:] == docker_evaluator.COMMAND.split()
+
+
+@pytest.mark.parametrize("exit_code, reported", [(0, 0), (3, 3), (125, 1), (255, 1)])
+def test_submission_cannot_exit_like_docker_or_ssh(exit_code, reported):
+    # 125 (docker) and 255 (ssh) mean a server fault, which is not counted against the team.
+    done = subprocess.run(["sh", "-c", docker_evaluator.STEP_EXIT, "sh",
+                           sys.executable, "-c", f"import sys; sys.exit({exit_code})"])
+    assert done.returncode == reported
+
+
+def test_a_killed_submission_keeps_its_exit_code():
+    # 137 is still the OOM killer, not a plain failure.
+    done = subprocess.run(["sh", "-c", docker_evaluator.STEP_EXIT, "sh",
+                           sys.executable, "-c", "import os, signal; os.kill(os.getpid(), signal.SIGKILL)"])
+    assert done.returncode == 137
 
 
 def test_generated_sheet_has_ten_character_ids(db):
