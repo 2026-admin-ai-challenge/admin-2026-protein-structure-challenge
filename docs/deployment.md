@@ -84,7 +84,9 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 
 운영 서버가 실제로 쓰는 `.env`는 서버 디스크의 `~/admin-2026-protein-structure-challenge/.env` 하나뿐입니다. 저장소의 `.env.example`은 템플릿이라 고쳐도 운영에 영향이 없고, 서버의 `.env`는 저장소에 올라가지 않습니다. CI 자동 배포는 compose 파일과 `deploy/nginx.conf`만 덮어쓰고 `.env`는 건드리지 않으므로, 한 번 고치면 다음 배포에도 유지됩니다. Compose는 compose 파일과 같은 디렉터리의 `.env`만 자동으로 읽습니다. 다른 이름으로 두면 읽지 않습니다.
 
-아래에서 `$dc`는 이 명령입니다. **compose 파일 두 개를 항상 같이 지정합니다.** 하나만 쓰면 GHCR 이미지 대신 서버에서 빌드를 시작해 웹 이미지에 30분이 걸립니다.
+아래는 **웹 서버**(CI가 배포하는 그 서버) 기준입니다. `$dc`는 이 명령이고, **compose 파일 두 개를 항상 같이 지정합니다.** 하나만 쓰면 GHCR 이미지 대신 빌드를 시도합니다. 웹 서버에는 저장소가 없어 바로 실패하고, 저장소가 있는 장비에서는 1 OCPU 기준 30분이 걸리는 빌드가 시작됩니다.
+
+실채점 장비는 compose 조합이 다릅니다(`docker-compose.yml` + `docker-compose.evaluator.yml`). 그 장비에서 아래 `$dc`를 쓰면 `api`와 `worker`가 `EVALUATOR=mock`으로 다시 만들어져 가짜 점수로 채점합니다. 실채점 장비에서는 `-f docker-compose.evaluator.yml`을 얹은 조합을 그대로 씁니다.
 
 ```bash
 cd ~/admin-2026-protein-structure-challenge
@@ -128,7 +130,7 @@ dc="docker compose -f docker-compose.yml -f docker-compose.ghcr.yml"
 | `APP_ORIGIN`, `COOKIE_SECURE` | api | `up -d api` |
 | `MAX_ZIP_BYTES`, `MAX_UNZIPPED_BYTES`, `MAX_ZIP_ENTRIES`, `ZIP_REQUIRED`, `ZIP_RETENTION`, `INFERENCE_TIMEOUT_SECONDS`, `WORKER_STALE_SECONDS` | api, worker | `up -d api worker` |
 | `MOCK_DELAY_SECONDS` | worker | `up -d worker` |
-| `DATA_HOST_DIR` | api(마운트 경로) | `up -d api` |
+| `DATA_HOST_DIR` | api(마운트 경로). 실채점 장비에서는 worker에도 `public`·`private`로 마운트됩니다 | `up -d api worker` |
 | `SECRET_KEY` | api, worker | **대회 중 바꾸지 않습니다.** 세션 쿠키(JWT) 서명 키라서 전원이 로그아웃됩니다 |
 | `POSTGRES_PASSWORD` | postgres, api, worker | **단독으로 바꾸지 않습니다.** Postgres는 DB를 처음 만들 때만 이 값을 쓰므로, `.env`만 고치면 접속 문자열만 바뀌어 인증에 실패합니다 |
 | `TEAM_SUBMISSION_LIMIT` | api | 새 DB의 초기값입니다. 운영 중에는 효과가 없고 관리자 화면에서 바꿉니다 |
@@ -139,7 +141,9 @@ dc="docker compose -f docker-compose.yml -f docker-compose.ghcr.yml"
 ### 잘못 적은 값
 
 - **바로 멈추는 값**: `SECRET_KEY`가 32자 미만, 숫자 변수에 숫자가 아닌 값, `ZIP_RETENTION`이 `best_public`·`keep_all` 외의 값이면 `api`와 `worker`가 시작하면서 사유를 로그에 적고 죽습니다(`app/config.py`). `$dc ps`에서 재시작을 반복하고 `/api/health`가 응답하지 않습니다.
-- **조용히 무시되는 값**: `LAUNCH_AT`의 형식이 틀리면 오류 없이 기본값(`2026-11-01T13:00:00+09:00`)으로 돌아갑니다. 오타로 주제가 미리 공개되지 않게 한 동작이라, "고쳤는데 그대로"일 때는 ISO 8601 형식을 확인합니다. `APPLY_URL`도 `https://`로 시작하지 않으면 버튼이 사라집니다.
+- **조용히 무시되는 값**: `LAUNCH_AT`의 형식이 틀리면 오류 없이 기본값(`2026-11-01T13:00:00+09:00`)으로 돌아갑니다. 오타로 주제가 미리 공개되지 않게 한 동작이라, "고쳤는데 그대로"일 때는 형식을 확인합니다.
+- **`LAUNCH_AT`은 반드시 정확한 ISO 8601로 적습니다**(예: `2026-11-01T13:00:00+09:00`). API는 `datetime.fromisoformat`만 받아들여 틀리면 기본값으로 돌아가지만, 웹은 더 관대한 `Date.parse`를 써서 `2026/11/15 13:00:00` 같은 값도 해석합니다. 두 값이 어긋나면 화면은 카운트다운인데 API는 열려 있어, `/api`로 직접 요청하면 주제를 알 수 있습니다(`gateway`는 `/api`를 Next.js를 거치지 않고 보냅니다). 바꾼 뒤에는 화면과 `/api`를 함께 확인합니다.
+- **`APPLY_URL`은 비워도 버튼이 사라지지 않습니다.** 빈 값이면 코드에 있는 기본 신청 주소로 돌아갑니다. 버튼을 없애려면 `https://`로 시작하지 않는 값을 넣어야 합니다(`app/launch.ts`).
 - 설정되지 않은 변수 이름은 오류 없이 무시됩니다. 쓰이는 변수만 효과가 있습니다.
 
 ### 작업 시점
