@@ -157,6 +157,47 @@ def test_turning_isolation_off_checks_the_machine_again_and_says_so(monkeypatch,
     assert infer["isolation"] is False and infer["limits"] is None and infer["tasks"] == int(local.PIDS)
 
 
+def test_the_inference_step_gets_the_gpu_the_run_was_handed(monkeypatch):
+    monkeypatch.setattr(local, "GPUS", "all")
+    evaluator = SandboxEvaluator()
+    evaluator._run_dir, evaluator._gpu = RUN, "3"
+    assert json.loads(evaluator._inference_command("admin-eval-7-abcd1234", None, None, None)[-1])["gpus"] == "3"
+    evaluator._gpu = None
+    assert json.loads(evaluator._inference_command("admin-eval-7-abcd1234", None, None, None)[-1])["gpus"] == "all"
+
+
+def test_a_worker_slot_runs_its_probe_and_steps_as_its_own_user(monkeypatch, configured):
+    # Slots are threads of one process (app.worker), and every step ends by killing its user's processes.
+    sent = scripted(monkeypatch, (0, check_output(**CNU_CONTAINER), ""), (0, probe(network="open"), ""))
+    evaluator = SandboxEvaluator()
+    evaluator.configure(types.SimpleNamespace(eval_isolation=False))
+    evaluator.run_uid = 64002
+    ok, detail = evaluator.ready()
+    assert ok and "uid 64002로 실행" in detail and json.loads(_probe_spec(sent[1]))["run_uid"] == 64002
+    evaluator._run_dir = RUN
+    install = json.loads(evaluator._install_command("admin-eval-7-abcd1234", None, ["numpy"], False, 60)[-1])
+    infer = json.loads(evaluator._inference_command("admin-eval-7-abcd1234", None, None, None)[-1])
+    assert install["run_uid"] == infer["run_uid"] == 64002
+    cleanups = []
+    monkeypatch.setattr(evaluator, "_remote", cleanups.append)
+    evaluator._unstage(local.WORK_DIR / "submission-7-abcd1234")
+    assert "pkill -KILL -U 64002 " in cleanups[0]
+
+
+@pytest.mark.parametrize("load, gpus", [
+    ("gpu=0, 15708, 97\ngpu=1, 4520, 77\ngpu=2, 6, 0\ngpu=0, 15710, 99\n", "2"),
+    ("nvidia_error=Failed to initialize NVML: Driver/library version mismatch\n", "all"),
+])
+def test_with_gpu_picking_the_probe_computes_on_the_emptiest_gpu(monkeypatch, configured, load, gpus):
+    # With all GPUs visible CUDA takes GPU 0, which another user may have filled.
+    monkeypatch.setattr(local, "GPUS", "all")
+    monkeypatch.setattr(local, "GPU_PICK", "free")
+    sent = scripted(monkeypatch, (0, check_output(), ""), (0, load, ""), (0, PROBE_OK, ""))
+    checks, _ = sandbox.examine(load_target())
+    assert not failed(checks) and "nvidia-smi --query-gpu=index,memory.used" in sent[1]
+    assert json.loads(_probe_spec(sent[2]))["gpus"] == gpus
+
+
 def test_the_message_says_which_reasons_turning_isolation_off_would_skip(monkeypatch, configured):
     scripted(monkeypatch, (0, check_output(**CNU_CONTAINER, version="missing"), ""))
     evaluator = SandboxEvaluator()

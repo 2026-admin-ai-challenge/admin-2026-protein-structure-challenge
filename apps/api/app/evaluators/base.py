@@ -23,6 +23,10 @@ def failure(code, message=None, log=None):
 
 class Evaluator:
     name = "base"
+    # EVAL_GPU_PICK=free (remote.py): the worker hands each run one of free_gpus().
+    picks_gpus = False
+    # Why the queue waits although the evaluator is ready (no free GPU), for the admin page.
+    gpu_note = None
 
     def configure(self, settings):
         """Takes the competition settings before each check; `settings` may be None."""
@@ -30,6 +34,11 @@ class Evaluator:
     def ready(self):
         """(ok, detail). A worker takes no submissions while its evaluator is not ready."""
         return True, "ready"
+
+    def free_gpus(self, held=()):
+        """With picks_gpus: the GPUs a run could take now, best first, leaving out `held` (the
+        ones our running submissions have). Empty while none is free."""
+        return []
 
     def run(self, submission, zip_path, tick) -> Outcome:
         """`tick()` must be called regularly so the worker can report liveness."""

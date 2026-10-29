@@ -32,7 +32,7 @@ from pathlib import Path
 
 from prediction_validator import load_contract
 
-from ..config import INFERENCE_TIMEOUT_SECONDS, PREDICTION_CONTRACT, REPO_ROOT
+from ..config import INFERENCE_TIMEOUT_SECONDS, PREDICTION_CONTRACT, REPO_ROOT, WORKER_SLOTS
 from ..errors import FAILURES
 from ..zipcheck import ZipRejected, inspect, safe_extract
 from .base import Evaluator, Outcome, failure
@@ -46,6 +46,9 @@ TMPFS_SIZE = os.getenv("EVAL_TMPFS_SIZE", "1g")
 # GPUs given to the inference container only: "all", or indexes like "0" / "0,1". Empty: none.
 GPUS = os.getenv("EVAL_GPUS", "").strip()
 GPUS_PATTERN = re.compile(r"^(all|\d+(,\d+)*)$")
+# "fixed": every run gets all of EVAL_GPUS. "free" (remote and sandbox only): each run gets ONE
+# of them, nearly empty when the run starts and held by no other run of ours (remote.py).
+GPU_PICK = os.getenv("EVAL_GPU_PICK", "fixed").strip().lower()
 # Installing a submission's packages, both passes together. Not counted in the inference limit.
 INSTALL_TIMEOUT_SECONDS = int(os.getenv("EVAL_INSTALL_TIMEOUT_SECONDS", "600"))
 # Docker volume keeping pip's downloads between online installs. Empty: no cache.
@@ -116,7 +119,7 @@ def _isolated(name, network="none"):
     ]
 
 
-def build_command(name, code_dir: Path, output_dir: Path, volume=None):
+def build_command(name, code_dir: Path, output_dir: Path, volume=None, gpus=None):
     command = [
         *_isolated(name),
         "-v", f"{_host_path(code_dir)}:/submission:ro",
@@ -124,7 +127,7 @@ def build_command(name, code_dir: Path, output_dir: Path, volume=None):
         "-v", f"{_host_path(output_dir)}:/output:rw",
     ]
     # Only inference sees a GPU, never the package install.
-    command += gpu_args()
+    command += gpu_args(gpus)
     if volume:
         # The submission's packages, read only. `python` resolves to their environment.
         command += ["-v", f"{volume}:{DEPS}:ro", "-e", f"PATH={VENV}/bin:{BASE_PATH}", "-e", f"VIRTUAL_ENV={VENV}"]
@@ -154,20 +157,31 @@ def install_command(name, volume, requirements, online=False, seconds=INSTALL_TI
     ]
 
 
-def gpu_problem(required=False):
-    """Why EVAL_GPUS cannot be used, or None. The one place its value is judged."""
+def gpu_problem(required=False, pick=False):
+    """Why EVAL_GPUS and EVAL_GPU_PICK cannot be used, or None. The one place their values are
+    judged. `pick`: whether the evaluator can hand out GPUs (remote and sandbox)."""
+    if GPU_PICK not in ("fixed", "free"):
+        return f"EVAL_GPU_PICK은 fixed 또는 free여야 합니다(지금 값: {GPU_PICK!r})."
+    if GPU_PICK == "free" and not pick:
+        return "EVAL_GPU_PICK=free는 remote와 sandbox 채점에서만 쓸 수 있습니다. fixed로 바꾸세요."
     if not GPUS:
+        if GPU_PICK == "free":
+            return "EVAL_GPU_PICK=free인데 고를 GPU가 없습니다. EVAL_GPUS에 후보 GPU 번호(예: 0,3,4)나 all을 적으세요."
         return "EVAL_GPUS가 비어 있습니다. 사용할 GPU 번호(예: 0 또는 0,1)나 all을 적으세요." if required else None
     if not GPUS_PATTERN.match(GPUS):
         return f"EVAL_GPUS는 all 또는 0, 0,1 같은 GPU 번호여야 합니다(지금 값: {GPUS!r})."
+    if WORKER_SLOTS > 1 and GPU_PICK != "free":
+        return (f"WORKER_SLOTS={WORKER_SLOTS}인데 EVAL_GPU_PICK이 fixed라 모든 슬롯이 같은 GPU({GPUS})를 씁니다. "
+                "EVAL_GPU_PICK=free로 바꾸거나 WORKER_SLOTS=1로 두세요.")
     return None
 
 
-def gpu_args():
-    """`--gpus` for EVAL_GPUS. Docker reads the quoted form as a list of devices."""
-    if not GPUS:
+def gpu_args(gpus=None):
+    """`--gpus` for `gpus` (default EVAL_GPUS). Docker reads the quoted form as a list of devices."""
+    gpus = GPUS if gpus is None else gpus
+    if not gpus:
         return []
-    return ["--gpus", "all" if GPUS == "all" else f'"device={GPUS}"']
+    return ["--gpus", "all" if gpus == "all" else f'"device={gpus}"']
 
 
 def _local(command):
@@ -223,13 +237,17 @@ class DockerEvaluator(Evaluator):
     def _prune(self):
         prune_abandoned(self._wrap, self.VOLUMES)
 
+    def _gpus(self):
+        """The GPUs of the running submission's inference (RemoteEvaluator: the one it was handed)."""
+        return GPUS
+
     # The commands of one run. SandboxEvaluator (sandbox.py) starts the same steps without Docker.
 
     def _install_command(self, name, volume, requirements, online, seconds):
         return install_command(name, volume, requirements, online, seconds)
 
     def _inference_command(self, name, code_dir, output_dir, volume):
-        return build_command(name, code_dir, output_dir, volume)
+        return build_command(name, code_dir, output_dir, volume, self._gpus())
 
     def _kill_command(self, name):
         return ["docker", "kill", name]

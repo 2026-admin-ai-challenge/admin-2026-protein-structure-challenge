@@ -7,19 +7,25 @@
 It takes queued submissions from the database one at a time, runs the configured
 evaluator, scores the predictions against hidden labels and updates the leaderboard.
 State lives in the database, so queued work survives restarts of the worker or the server.
+
+With WORKER_SLOTS above 1 the process runs that many workers as threads and starts again one
+that stops. On a GPU machine they need EVAL_GPU_PICK=free, so each run is handed a GPU of its own.
 """
 import argparse
 import json
 import logging
 import os
+import signal
 import socket
+import sys
+import threading
 import time
 from datetime import timedelta
 
 from sqlalchemy import select, update
 
 from . import files, storage
-from .config import EVALUATOR, WORKER_STALE_SECONDS as STALE_SECONDS
+from .config import EVALUATOR, WORKER_SLOTS, WORKER_STALE_SECONDS as STALE_SECONDS
 from .db import SessionLocal
 from .errors import FAILURES, UNCOUNTED_FAILURES
 from .evaluators import get_evaluator
@@ -60,13 +66,31 @@ def recover_stale(db):
             row.counted, row.finished_at = False, now()
             row.log_tail = f"gave up after {row.attempts} interrupted attempts"
         else:
-            row.status, row.worker_id = "queued", None
+            row.status, row.worker_id, row.gpu = "queued", None, None
         log.warning("recovered stale submission %s -> %s", row.id, row.status)
     db.commit()
     return len(rows)
 
 
-def claim(db, worker_id):
+def held_gpus(db):
+    """GPUs handed to running submissions, also to ones whose worker died: their processes may
+    still be on it until recover_stale gives them back."""
+    return set(db.scalars(select(Submission.gpu).where(Submission.status == "running", Submission.gpu.is_not(None))))
+
+
+def claim(db, worker_id, gpus=None):
+    """Takes the oldest queued submission. `gpus` (EVAL_GPU_PICK=free): the free GPUs, best
+    first; the submission gets the first that no running submission holds, and stays queued
+    when none is left."""
+    gpu = None
+    if gpus is not None:
+        # One worker at a time hands out a GPU, so two never take the same one.
+        db.scalar(select(Settings).where(Settings.id == 1).with_for_update())
+        held = held_gpus(db)
+        gpu = next((index for index in gpus if index not in held), None)
+        if gpu is None:
+            db.rollback()
+            return None
     row = db.scalar(
         select(Submission).where(Submission.status == "queued").order_by(Submission.id).limit(1).with_for_update(skip_locked=True)
     )
@@ -74,7 +98,7 @@ def claim(db, worker_id):
         db.rollback()
         return None
     stamp = now()
-    row.status, row.worker_id, row.attempts = "running", worker_id, row.attempts + 1
+    row.status, row.worker_id, row.attempts, row.gpu = "running", worker_id, row.attempts + 1, gpu
     row.started_at, row.heartbeat_at = stamp, stamp
     row.failure_code = row.error_message = row.log_tail = None
     db.commit()
@@ -124,12 +148,22 @@ def finish(db, submission_id, worker_id, outcome, evaluator_name):
 
 
 def process_one(db, evaluator, worker_id, answers=None):
-    """Scores one queued submission. Returns its row, or None when the queue is empty."""
-    row = claim(db, worker_id)
+    """Scores one queued submission. Returns its row, or None when the queue is empty or, with
+    EVAL_GPU_PICK=free, no GPU is free (evaluator.gpu_note then says why)."""
+    gpus = None
+    if evaluator.picks_gpus:
+        queued = db.scalar(select(Submission.id).where(Submission.status == "queued").limit(1))
+        held = held_gpus(db)
+        db.rollback()  # no transaction stays open while the GPU machine is asked
+        if queued is None:
+            evaluator.gpu_note = None
+            return None
+        gpus = evaluator.free_gpus(held)
+    row = claim(db, worker_id, gpus)
     if not row:
         return None
     submission_id, last = row.id, time.monotonic()
-    report(db, worker_id, True, "running", submission_id)
+    report(db, worker_id, True, f"running on GPU {row.gpu}" if row.gpu else "running", submission_id)
 
     def tick():
         nonlocal last
@@ -181,8 +215,10 @@ def rescore(db):
     return count
 
 
-def run_forever(once=False):
-    worker_id, evaluator = worker_name(), get_evaluator()
+def run_forever(once=False, worker_id=None, run_uid=None):
+    worker_id, evaluator = worker_id or worker_name(), get_evaluator()
+    if run_uid is not None:
+        evaluator.run_uid = run_uid  # EVALUATOR=sandbox without isolation: the user this slot's steps run as
     log.info("worker %s started with evaluator=%s", worker_id, evaluator.name)
     labels_checked = evaluator.name == "mock"  # the mock never reads hidden labels
     while True:
@@ -210,7 +246,7 @@ def run_forever(once=False):
                 db.commit()
                 files.purge_deleted(db)
                 handled = process_one(db, evaluator, worker_id) if ok else None
-                report(db, worker_id, ok, detail)
+                report(db, worker_id, ok, f"{detail}\n{evaluator.gpu_note}" if ok and evaluator.gpu_note else detail)
                 if not ok:
                     log.warning("evaluator not ready: %s", detail)
         except Exception:
@@ -219,6 +255,33 @@ def run_forever(once=False):
             return
         if not handled:
             time.sleep(POLL_SECONDS)
+
+
+def run_slots(count):
+    """One worker thread per slot, each started again when it stops. Threads, not processes:
+    the scoring libraries take ~185 MB in every process and the web VM has under 1 GB, while a
+    slot spends its time waiting on the GPU machine, not running Python. Every slot has its own
+    name and its own EVAL_SANDBOX_RUN_UID: a sandbox run without isolation kills every process
+    of its uid after each step, so slots sharing one would kill each other's runs."""
+    base = os.getenv("WORKER_NAME") or socket.gethostname()
+    uid = int(os.getenv("EVAL_SANDBOX_RUN_UID", "64000"))
+
+    def start(slot):
+        thread = threading.Thread(target=run_forever, name=f"slot-{slot}", daemon=True,
+                                  kwargs={"worker_id": f"{base}-{slot}", "run_uid": uid + slot - 1})
+        thread.start()
+        return thread
+
+    slots = {slot: start(slot) for slot in range(1, count + 1)}
+    log.info("started %s worker slots", count)
+    # Daemon threads end with the process; a run cut off this way is queued again by recover_stale.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    while True:
+        time.sleep(5)
+        for slot, thread in list(slots.items()):
+            if not thread.is_alive():
+                log.warning("worker slot %s stopped; starting it again", slot)
+                slots[slot] = start(slot)
 
 
 def main():
@@ -231,6 +294,8 @@ def main():
         with SessionLocal() as db:
             print(f"rescored {rescore(db)} submissions")
         return
+    if WORKER_SLOTS > 1 and not args.once:
+        return run_slots(WORKER_SLOTS)
     run_forever(once=args.once)
 
 

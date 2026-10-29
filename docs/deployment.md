@@ -168,10 +168,22 @@ ssh evaluator@<GPU 서버> 'sh admin-eval-setup/setup-server.sh --root "$HOME/ad
 **격리 끄기** (관리자 화면 → 설정 → "채점 격리"): Docker 기본 보안 설정의 컨테이너처럼 user namespace가 막힌 서버용입니다. 기본값은 켜짐이고, 끄면 조작 기록에 남습니다. 바꾸면 다음 채점 전에 서버를 다시 점검합니다.
 - 끄면 단계마다 bwrap 없이 서버에서 바로 실행합니다. 명령의 `/submission`, `/input`, `/output`, `/deps`는 그 제출의 실제 폴더로 바꿔 넘깁니다. 참가자 코드가 이 경로를 인자로 받지 않고 코드에 직접 적었다면 동작하지 않습니다.
 - **네트워크를 막지 못합니다.** 참가자 코드가 외부 모델·데이터를 내려받을 수 있고, 서버에서 읽을 수 있는 파일은 읽을 수 있습니다. 정답은 서버에 없습니다.
-- 접속 계정이 root면 제출 코드는 따로 만든 일반 uid(`EVAL_SANDBOX_RUN_UID`, 기본 64000)로 실행합니다. 그래서 채점 환경과 다른 제출의 폴더를 바꿀 수 없고, 프로세스 수는 `EVAL_PIDS`로 제한합니다. 단계가 끝나면 그 uid의 프로세스를 모두 종료하므로 GPU 서버 하나에 worker는 하나만 둡니다. 이 uid가 채점 환경과 평가 입력을 읽어야 하므로 `--root`와 Python은 `/root` 밖(예: `/srv/admin-eval`)에 둡니다. `setup-server.sh`가 이를 확인합니다.
+- 접속 계정이 root면 제출 코드는 따로 만든 일반 uid(`EVAL_SANDBOX_RUN_UID`, 기본 64000)로 실행합니다. 그래서 채점 환경과 다른 제출의 폴더를 바꿀 수 없고, 프로세스 수는 `EVAL_PIDS`로 제한합니다. 단계가 끝나면 그 uid의 프로세스를 모두 종료하므로, worker 컨테이너를 더 띄우지 말고 아래 "여러 제출 동시 채점"처럼 `WORKER_SLOTS`로 늘립니다(슬롯마다 uid가 다릅니다). 이 uid가 채점 환경과 평가 입력을 읽어야 하므로 `--root`와 Python은 `/root` 밖(예: `/srv/admin-eval`)에 둡니다. `setup-server.sh`가 이를 확인합니다.
 - 접속 계정이 root가 아니면 제출 코드는 접속 계정 권한으로 실행됩니다.
 - 메모리·CPU 제한(cgroup)은 쓰지 않습니다. 시간·출력 크기·프로세스 수 제한과 컨테이너 전체의 메모리 제한만 남습니다. 점검은 bwrap·user namespace·cgroup 항목을 건너뛰고, 실제 점검 프로그램으로 평가 입력과 GPU만 확인합니다.
 - 손으로 점검하려면 `python -m app.evaluators.sandbox --no-isolation`을 실행합니다.
+
+**여러 제출 동시 채점** (`remote`, `sandbox`): `.env`에 `WORKER_SLOTS=5`, `EVAL_GPU_PICK=free`, `EVAL_GPUS=all`(또는 후보 GPU 번호, 예: `0,3,4,6,7`)을 적고 `up -d worker`로 다시 시작합니다.
+- worker 프로세스 하나가 슬롯마다 스레드를 하나씩 돌립니다. 관리자 화면의 worker 목록에 `<이름>-1`부터 `<이름>-5`까지 따로 보이고, 멈춘 슬롯은 몇 초 안에 다시 시작합니다.
+- 프로세스가 아니라 스레드인 이유는 메모리입니다. 채점 라이브러리(pandas 등)를 불러온 worker 프로세스 하나가 약 185MB를 쓰는데, 웹 VM은 메모리가 1GB가 안 됩니다. 스레드는 이를 함께 쓰고, 채점의 무거운 부분은 GPU 서버에서 돌기 때문에 worker는 대부분 기다리기만 합니다.
+- 접속 점검의 짧은 GPU 계산도 그 순간 가장 빈 GPU에서 합니다. GPU가 모두 보이면 CUDA가 GPU 0을 쓰는데, 다른 사용자가 GPU 0을 채우면 점검이 실패해 모든 슬롯이 멈추기 때문입니다.
+- 채점을 시작하기 직전에 GPU 사용량을 3초 동안 읽습니다. 사용 메모리가 `EVAL_GPU_FREE_MEMORY_MIB`(기본 2048) 미만이고 사용률이 `EVAL_GPU_FREE_UTILIZATION`(기본 10)% 미만인 GPU 가운데, 다른 슬롯이 쓰지 않는 가장 빈 GPU 1장을 그 채점에 줍니다. 어느 GPU였는지는 제출의 운영진 로그 첫 줄에 남습니다.
+- 빈 GPU가 없으면 제출은 대기열에 그대로 두고, worker 상태에 GPU별 사용량과 기다리는 이유를 보여 줍니다. 15초마다 다시 확인합니다.
+- 시작할 때만 확인하므로, 채점 도중 다른 사용자가 같은 GPU에 작업을 올리는 것은 막지 못합니다. 공용 서버라면 대회 기간에 GPU를 비워 달라고 서버 관리자에게 요청하세요.
+- 격리를 끈 `sandbox`에서 슬롯 n은 uid `EVAL_SANDBOX_RUN_UID + n - 1`(기본 64000부터)로 실행합니다.
+- 메모리·CPU 제한이 없을 때(격리 끔, `EVAL_SANDBOX_LIMITS=none`)는 동시에 도는 제출이 서버의 CPU와 메모리를 나눠 씁니다.
+- `EVAL_GPU_PICK=fixed`인데 `WORKER_SLOTS`가 2 이상이면 모든 슬롯이 같은 GPU를 쓰게 되므로, 점검에서 연결을 취소하고 이유를 보여 줍니다.
+
 ## CI 자동 배포
 
 `main`에 push(머지)되면 GitHub Actions [`deploy.yml`](../.github/workflows/deploy.yml)이 웹 서버에 배포합니다. Actions 화면에서 수동으로 실행할 수도 있습니다.
@@ -248,7 +260,7 @@ grep -Eq '^EVAL_SSH_HOST=[^[:space:]]' .env && dc="$dc -f docker-compose.remote.
 | `TEAM_SUBMISSION_LIMIT` | api | 새 DB의 초기값입니다. 운영 중에는 효과가 없고 관리자 화면에서 바꿉니다 |
 | `EVALUATOR` | — | compose가 정합니다. `.env`로 바꾸지 않습니다 |
 | `EVAL_REMOTE_EVALUATOR` | api, worker | `up -d api worker`. 대회 중에는 바꾸지 않습니다(순위표는 현재 평가기의 점수만 보여 줍니다) |
-| `EVAL_SSH_*`, `EVAL_REMOTE_*`, `EVAL_SANDBOX_*`, `EVAL_GPUS`, `EVAL_IMAGE` 등 원격 채점 값 | worker | `up -d worker`. `EVAL_SSH_HOST`를 처음 넣거나 지울 때는 `$dc`를 다시 정한 뒤 `up -d api worker` |
+| `EVAL_SSH_*`, `EVAL_REMOTE_*`, `EVAL_SANDBOX_*`, `EVAL_GPU*`, `WORKER_SLOTS`, `EVAL_IMAGE` 등 원격 채점 값 | worker | `up -d worker`. `EVAL_SSH_HOST`를 처음 넣거나 지울 때는 `$dc`를 다시 정한 뒤 `up -d api worker` |
 
 각 변수의 기본값과 의미는 [용량·환경변수](#용량환경변수)에 있습니다. 일정, 팀당 제출 횟수, 실패 차감, 최종 순위 기준, 동결은 `.env`가 아니라 관리자 화면 "현황·설정"에서 바꿉니다.
 

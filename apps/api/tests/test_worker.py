@@ -174,6 +174,128 @@ def test_result_of_a_worker_that_lost_its_job_is_dropped(client, db, participant
     assert row.status == "running" and row.public_score is None
 
 
+class Picking(Evaluator):
+    """Like a GPU machine with EVAL_GPU_PICK=free: `free` are its nearly empty GPUs."""
+    name = "mock"
+    picks_gpus = True
+
+    def __init__(self, free):
+        self.free, self.asked, self.ran = free, [], []
+
+    def free_gpus(self, held=()):
+        self.asked.append(set(held))
+        return [index for index in self.free if index not in held]
+
+    def run(self, submission, zip_path, tick):
+        self.ran.append(submission.gpu)
+        return Outcome(ok=True, scores={"public": 0.5, "private": 0.5})
+
+
+def test_each_run_gets_a_gpu_no_running_submission_holds(client, db, participant):
+    evaluator = Picking(["3", "5"])
+    assert process_one(db, evaluator, "worker-b") is None and evaluator.asked == []  # empty queue: the machine is not asked
+    first, second = upload(client).json(), upload(client).json()
+    # A slot that died mid-run still holds its GPU until recover_stale gives the submission back.
+    row = db.get(Submission, first["id"])
+    row.status, row.worker_id, row.gpu, row.attempts = "running", "worker-a", "3", 1
+    row.started_at = row.heartbeat_at = now() - timedelta(minutes=30)
+    db.commit()
+    done = process_one(db, evaluator, "worker-b")
+    assert done.id == second["id"] and done.gpu == "5" and evaluator.ran == ["5"] and evaluator.asked == [{"3"}]
+    assert recover_stale(db) == 1 and db.get(Submission, first["id"]).gpu is None
+    assert process_one(db, evaluator, "worker-b").gpu == "3"
+
+
+def test_a_gpu_taken_meanwhile_is_not_handed_out_again(client, db, participant):
+    class Stale(Picking):
+        def free_gpus(self, held=()):
+            return ["3"]  # read before another slot took GPU 3
+
+    running, waiting = upload(client).json(), upload(client).json()
+    row = db.get(Submission, running["id"])
+    row.status, row.worker_id, row.gpu, row.heartbeat_at = "running", "worker-a", "3", now()
+    db.commit()
+    assert process_one(db, Stale([]), "worker-b") is None
+    assert db.get(Submission, waiting["id"]).status == "queued"
+
+
+def test_the_admin_page_says_why_the_queue_waits_for_a_gpu(client, db, participant, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from app import worker
+
+    class Busy(Picking):
+        def free_gpus(self, held=()):
+            self.gpu_note = "비어 있는 GPU가 없어 채점을 기다립니다"
+            return []
+
+    submitted = upload(client).json()
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=db.get_bind(), expire_on_commit=False))
+    monkeypatch.setattr(worker, "get_evaluator", lambda: Busy([]))
+    worker.run_forever(once=True)
+    assert db.scalars(select(Worker)).one().detail == "ready\n비어 있는 GPU가 없어 채점을 기다립니다"
+    assert db.get(Submission, submitted["id"]).status == "queued"
+
+
+def test_only_waiting_submissions_have_a_place_in_line(client, db, participant):
+    running, waiting = upload(client).json(), upload(client).json()
+    row = db.get(Submission, running["id"])
+    row.status, row.worker_id = "running", "worker-a"
+    db.commit()
+    entries = {entry["id"]: entry for entry in client.get("/api/submissions/me").json()["entries"]}
+    assert entries[running["id"]]["queue_position"] is None and entries[waiting["id"]]["queue_position"] == 1
+
+
+def test_slots_are_threads_of_their_own_and_one_that_stops_starts_again(monkeypatch):
+    import threading
+    from app import worker
+
+    threads, runs, release = [], [], threading.Event()
+
+    class Recorded(threading.Thread):
+        def start(self):
+            threads.append(self)
+            super().start()
+
+    def run_forever(worker_id, run_uid):
+        runs.append((worker_id, run_uid))
+        if not (worker_id == "gpu-box-2" and runs.count(("gpu-box-2", 64001)) == 1):  # slot 2's first thread stops at once
+            release.wait(5)
+
+    def sleep(seconds):
+        if len(threads) == 3:
+            threads[1].join(5)
+        else:
+            raise SystemExit(0)  # the container is stopped
+
+    monkeypatch.setattr(worker.threading, "Thread", Recorded)
+    monkeypatch.setattr(worker, "run_forever", run_forever)
+    monkeypatch.setattr(worker.time, "sleep", sleep)
+    monkeypatch.setattr(worker.signal, "signal", lambda *args: None)
+    monkeypatch.setenv("WORKER_NAME", "gpu-box")
+    monkeypatch.setenv("EVAL_SANDBOX_RUN_UID", "64000")
+    try:
+        with pytest.raises(SystemExit):
+            worker.run_slots(3)
+    finally:
+        release.set()
+    for thread in threads:
+        thread.join(5)
+    assert [thread.name for thread in threads] == ["slot-1", "slot-2", "slot-3", "slot-2"]
+    assert all(thread.daemon for thread in threads)  # they end with the process
+    assert sorted(runs) == [("gpu-box-1", 64000), ("gpu-box-2", 64001), ("gpu-box-2", 64001), ("gpu-box-3", 64002)]
+
+
+def test_a_slot_reports_under_its_own_name_and_its_evaluator_runs_as_its_own_user(db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from app import worker
+
+    evaluator = MockEvaluator()
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=db.get_bind(), expire_on_commit=False))
+    monkeypatch.setattr(worker, "get_evaluator", lambda: evaluator)
+    worker.run_forever(once=True, worker_id="gpu-box-3", run_uid=64002)
+    assert evaluator.run_uid == 64002 and db.scalars(select(Worker.id)).all() == ["gpu-box-3"]
+
+
 def test_the_worker_hands_the_settings_to_its_evaluator_before_each_check(db, monkeypatch):
     from sqlalchemy.orm import sessionmaker
     from app import worker

@@ -28,7 +28,8 @@ machine that forbids user namespaces, such as a Docker container with its defaul
 profiles. Steps then run directly on the machine, without bwrap or cgroup limits: they can
 reach the network. When the SSH account is root, a step runs as EVAL_SANDBOX_RUN_UID, a user
 of its own that cannot change the scoring environment or another run, and every process of
-that user is killed after each step. Run one worker per GPU machine then. The checks skip
+that user is killed after each step. Workers sharing a GPU machine therefore each need their
+own uid: the slots of WORKER_SLOTS get EVAL_SANDBOX_RUN_UID + slot - 1 (app.worker). The checks skip
 bwrap, user namespaces and the cgroup limits, and the probe proves only the input and the GPU.
 
     python -m app.evaluators.sandbox     # run the checks by hand and print the result
@@ -194,14 +195,15 @@ def tasks():
     raise ValueError(f"EVAL_PIDS must be a positive number, not {local.PIDS!r}")
 
 
-def spec(mode, run, seconds, pidfile=None, isolation=True, **extra):
-    """What sandbox_launch.py needs for one step. Every path is on the GPU machine."""
+def spec(mode, run, seconds, pidfile=None, isolation=True, run_uid=None, **extra):
+    """What sandbox_launch.py needs for one step. Every path is on the GPU machine. `run_uid`:
+    the worker slot's own user (app.worker), RUN_UID when none is given."""
     step = {"mode": mode, "root": ROOT, "run": run, "input": local.INPUT_HOST_DIR, "gpus": local.GPUS,
             "seconds": int(seconds), "pidfile": pidfile, "isolation": isolation}
     if isolation:
         step["limits"] = limits()
     else:
-        step.update(limits=None, run_uid=RUN_UID, tasks=tasks())
+        step.update(limits=None, run_uid=RUN_UID if run_uid is None else run_uid, tasks=tasks())
     return {**step, **extra}
 
 
@@ -324,9 +326,23 @@ def probe_checks(code, out, err, isolation=True):
     return checks or [Check("sandbox", True)]
 
 
-def _probe(target, isolation=True):
+def probe_gpus(target):
+    """The GPUs the probe computes on. EVAL_GPU_PICK=free: the one of EVAL_GPUS with the least
+    in use right now. With all of them visible CUDA would take GPU 0, and another user filling
+    that one would cancel the connection while the rest stand empty."""
+    if local.GPU_PICK != "free" or not local.GPUS:
+        return local.GPUS
+    try:
+        code, out, _ = remote._run(target, remote.remote_shell(remote.LOAD_SCRIPT), remote.CHECK_SECONDS)
+    except (OSError, subprocess.TimeoutExpired):
+        code, out = -1, ""
+    emptiest = remote.emptiest_first(remote.gpu_load(out)) if code == 0 else []
+    return emptiest[0] if emptiest else local.GPUS
+
+
+def _probe(target, isolation=True, run_uid=None):
     run = f"{remote._work_dir()}/submission-probe-{uuid.uuid4().hex[:8]}"
-    step = spec("probe", run, PROBE_SECONDS, isolation=isolation, command=PROBE_COMMAND)
+    step = spec("probe", run, PROBE_SECONDS, isolation=isolation, run_uid=run_uid, command=PROBE_COMMAND, gpus=probe_gpus(target))
     quoted = shlex.quote(run)
     script = (f"mkdir -p {quoted}/submission {quoted}/output && {shlex.join(launch_command(step))}; "
               f"c=$?; rm -rf {quoted}; exit $c")
@@ -347,9 +363,10 @@ def describe(target, checks, isolation=True):
     return text
 
 
-def examine(target, probe=True, isolation=True):
+def examine(target, probe=True, isolation=True, run_uid=None):
     """Every check, in order: settings here (no connection while one fails), the machine,
-    then, only when all of that passed and `probe` is set, a real step. Returns (checks, facts)."""
+    then, only when all of that passed and `probe` is set, a real step (as `run_uid`, see
+    spec). Returns (checks, facts)."""
     problems = settings_checks(target, isolation)
     if problems:
         return problems, {}
@@ -365,7 +382,7 @@ def examine(target, probe=True, isolation=True):
     facts = {"gpus": gpus, "python": values.get("python", "?"), "lock": values.get("version_lock", "?"),
              "root": values.get("uid") == "0"}
     if probe and all(check.ok for check in checks):
-        checks += _probe(target, isolation)
+        checks += _probe(target, isolation, run_uid)
     return checks, facts
 
 
@@ -379,6 +396,7 @@ class SandboxEvaluator(remote.RemoteEvaluator):
         super().__init__()
         self._run_dir = None  # the running submission's directory on the GPU machine
         self._isolation = True
+        self.run_uid = RUN_UID  # without isolation as root; each worker slot sets its own
 
     def configure(self, settings):
         """Takes Settings.eval_isolation. A change throws away every verdict: the next
@@ -389,12 +407,12 @@ class SandboxEvaluator(remote.RemoteEvaluator):
             self._forget()
 
     def _examine(self, target, prove):
-        return examine(target, probe=prove, isolation=self._isolation)
+        return examine(target, probe=prove, isolation=self._isolation, run_uid=self.run_uid)
 
     def _summary(self, target, facts):
-        names = ", ".join(f"GPU {row[0]} {row[1]} (드라이버 {row[2]})" for row in remote.chosen_gpus(facts["gpus"])) if local.GPUS else ""
+        names = remote.gpu_summary(facts["gpus"]) if local.GPUS else ""
         if not self._isolation:
-            runner = f"uid {RUN_UID}로 실행" if facts["root"] else "접속 계정으로 실행"
+            runner = f"uid {self.run_uid}로 실행" if facts["root"] else "접속 계정으로 실행"
             bounds = f"격리 꺼짐(네트워크·파일 접근 제한 없음, {runner}, {local.PIDS} pids)"
         elif LIMITS == "cgroup":
             bounds = f"{local.CPUS} cpus, {local.MEMORY} memory, {local.PIDS} pids"
@@ -413,12 +431,12 @@ class SandboxEvaluator(remote.RemoteEvaluator):
 
     def _install_command(self, name, volume, requirements, online, seconds):
         step = spec("install-online" if online else "install-offline", self._run_dir, int(seconds) + local.KILL_GRACE_SECONDS,
-                    self._pidfile(name), self._isolation, requirements=list(requirements))
+                    self._pidfile(name), self._isolation, self.run_uid, requirements=list(requirements))
         return launch_command(step)
 
     def _inference_command(self, name, code_dir, output_dir, volume):
         step = spec("infer", self._run_dir, local.INFERENCE_TIMEOUT_SECONDS + local.KILL_GRACE_SECONDS, self._pidfile(name),
-                    self._isolation, command=shlex.split(local.COMMAND), deps=volume is not None)
+                    self._isolation, self.run_uid, command=shlex.split(local.COMMAND), deps=volume is not None, gpus=self._gpus())
         return launch_command(step)
 
     def _kill_command(self, name):
@@ -435,7 +453,7 @@ class SandboxEvaluator(remote.RemoteEvaluator):
         """One connection: launchers of this run that may outlive a dropped link, then, without
         isolation as root, every process its own user left behind, then its directory."""
         run = shlex.quote(local._host_path(work))
-        leftovers = "" if self._isolation else f'if [ "$(id -u)" = 0 ]; then pkill -KILL -U {RUN_UID} 2>/dev/null; fi; '
+        leftovers = "" if self._isolation else f'if [ "$(id -u)" = 0 ]; then pkill -KILL -U {self.run_uid} 2>/dev/null; fi; '
         try:
             self._remote(f"{shlex.join(['sh', '-c', STOP, 'sh'])} {run}/*.pid; {leftovers}rm -rf {run}")
         except (OSError, subprocess.TimeoutExpired):

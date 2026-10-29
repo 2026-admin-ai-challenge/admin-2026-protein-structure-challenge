@@ -31,6 +31,15 @@ services:
       # GPU indexes as nvidia-smi numbers them, or all. The worker refuses an empty value
       # for remote, and runs sandboxes on the CPU with it.
       EVAL_GPUS: ${EVAL_GPUS:-}
+      # fixed: every run gets all of EVAL_GPUS. free: each run gets ONE of them that is nearly
+      # empty when it starts (memory and utilization under the two limits) and that no other
+      # run holds, for a machine others use too. Required when WORKER_SLOTS is above 1.
+      EVAL_GPU_PICK: ${EVAL_GPU_PICK:-fixed}
+      EVAL_GPU_FREE_MEMORY_MIB: ${EVAL_GPU_FREE_MEMORY_MIB:-2048}
+      EVAL_GPU_FREE_UTILIZATION: ${EVAL_GPU_FREE_UTILIZATION:-10}
+      # Submissions scored at once: worker threads of this container's one process, each with
+      # its own name and, without isolation, its own uid (EVAL_SANDBOX_RUN_UID + slot - 1).
+      WORKER_SLOTS: ${WORKER_SLOTS:-1}
       # sandbox: the --root given to setup-server.sh, and whether to require cgroup limits.
       EVAL_SANDBOX_ROOT: ${EVAL_SANDBOX_ROOT:-}
       EVAL_SANDBOX_LIMITS: ${EVAL_SANDBOX_LIMITS:-cgroup}
