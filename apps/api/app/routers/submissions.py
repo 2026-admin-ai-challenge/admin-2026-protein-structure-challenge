@@ -36,6 +36,9 @@ def precheck(db, user):
         raise ApiError(403, "closed", "현재 제출 기간이 아닙니다.")
     if used_attempts(db, user.team_id) >= settings.team_submission_limit:
         raise ApiError(429, "limit_reached", "팀의 제출 횟수를 모두 사용했습니다.")
+    # Hand the connection back to the pool before the body streams in: an upload can take
+    # minutes, and every one holding a connection would starve all other requests.
+    db.commit()
 
 
 def accept(db, user, filename, key, temporary, size, digest):
