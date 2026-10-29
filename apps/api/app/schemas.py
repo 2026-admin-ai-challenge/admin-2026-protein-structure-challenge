@@ -87,6 +87,11 @@ class LockPatch(BaseModel):
     locked: bool
 
 
+class AwardRecord(BaseModel):
+    team_id: int
+    board: Literal["public", "final"] = "public"
+
+
 class FileDelete(BaseModel):
     reason: str = Field(min_length=2, max_length=300)
 

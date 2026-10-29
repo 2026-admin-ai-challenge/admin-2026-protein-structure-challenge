@@ -4,12 +4,12 @@ from .config import EVALUATOR
 from .models import LeaderboardEntry, Submission, Team, User, utc
 
 
-def _moment(row):
+def moment(row):
     """When the score was recorded. Kept on the board entry for reference, not for ordering."""
     return utc(row.finished_at or row.created_at)
 
 
-def _rank_key(row, score):
+def rank_key(row, score):
     """The confirmed tie rule: the higher score, then the smaller uploaded ZIP, then the
     earlier submission (lower ID). A submission without a ZIP record sorts after one with it.
     Grading time is shown for reference only and never breaks a tie."""
@@ -18,45 +18,58 @@ def _rank_key(row, score):
 
 
 def best_of(rows, field="public_score"):
-    """The submission a board takes for one team, by `_rank_key` on `field`. ZIP retention
+    """The submission a board takes for one team, by `rank_key` on `field`. ZIP retention
     keeps the same submission (files.py) and the board orders teams with the same key, so
     the tie rule lives only here."""
     candidates = [row for row in rows if getattr(row, field) is not None]
-    return min(candidates, key=lambda s: _rank_key(s, getattr(s, field)), default=None)
+    return min(candidates, key=lambda s: rank_key(s, getattr(s, field)), default=None)
 
 
-def rebuild(db, board="public", selection="best_public"):
-    """Rewrites one board from scored submissions.
-
-    public: each team's best Public score.
-    private (final): with selection "best_public" the Private score of that same
-    submission; with "best_private" each team's best Private score.
-    Submissions scored by a different evaluator (e.g. mock while running docker) are ignored.
-    """
-    rows = db.scalars(
+def scored_rows(db):
+    """Every submission a board may take. Submissions scored by a different evaluator
+    (e.g. mock while running docker) and those of banned accounts are left out."""
+    return db.scalars(
         select(Submission)
         .join(User, User.id == Submission.user_id)
         .where(Submission.status == "succeeded", Submission.evaluator == EVALUATOR, User.banned.is_(False))
     ).all()
+
+
+def pick(subs, board="public", selection="best_public"):
+    """One team's submission on a board and the score it is ranked by, or (None, None).
+
+    public: the team's best Public score.
+    private (final): with selection "best_public" the Private score of that same
+    submission; with "best_private" the team's best Private score.
+    """
+    field = "private_score" if board == "private" and selection == "best_private" else "public_score"
+    best = best_of(subs, field)
+    if best is None:
+        return None, None
+    return best, best.private_score if board == "private" else best.public_score
+
+
+def rebuild(db, board="public", selection="best_public"):
+    """Rewrites one board from scored submissions, taking each team's submission by `pick`."""
+    rows = scored_rows(db)
     db.execute(delete(LeaderboardEntry).where(LeaderboardEntry.board == board))
     teams = {}
     for row in rows:
         teams.setdefault(row.team_id, []).append(row)
-    field = "private_score" if board == "private" and selection == "best_private" else "public_score"
     for team_id, subs in teams.items():
-        best = best_of(subs, field)
+        best, score = pick(subs, board, selection)
         if best is None:
             continue
         db.add(LeaderboardEntry(
-            team_id=team_id, submission_id=best.id, board=board,
-            score=best.private_score if board == "private" else best.public_score,
-            achieved_at=_moment(best), submission_count=len(subs),
+            team_id=team_id, submission_id=best.id, board=board, score=score,
+            achieved_at=moment(best), submission_count=len(subs),
             last_submission=max(utc(s.created_at) for s in subs),
         ))
     db.flush()
 
 
-def listing(db, board):
+def standings(db, board):
+    """The stored board in rank order, as (entry, team name, submission) rows."""
     rows = db.execute(
         select(LeaderboardEntry, Team.name, Submission)
         .join(Team, Team.id == LeaderboardEntry.team_id)
@@ -64,9 +77,13 @@ def listing(db, board):
         .join(User, User.id == Submission.user_id)
         .where(LeaderboardEntry.board == board, User.banned.is_(False))
     ).all()
-    rows.sort(key=lambda found: _rank_key(found[2], found[0].score))
+    rows.sort(key=lambda found: rank_key(found[2], found[0].score))
+    return rows
+
+
+def listing(db, board):
     return [
         {"rank": i + 1, "team": name, "score": entry.score, "grading_seconds": submission.grading_seconds,
          "submissions": entry.submission_count, "last_submission": entry.last_submission}
-        for i, (entry, name, submission) in enumerate(rows)
+        for i, (entry, name, submission) in enumerate(standings(db, board))
     ]

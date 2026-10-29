@@ -158,6 +158,22 @@ class LeaderboardEntry(Base):
     last_submission: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class SpecialAward(Base):
+    """The winner an organizer recorded for one special award (awards.py), with the numbers
+    it was decided on. The team is copied by ID and name, not linked, so the record stays
+    as it was when the boards or the team change later."""
+    __tablename__ = "special_awards"
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    board: Mapped[str] = mapped_column(String(10))
+    team_id: Mapped[int] = mapped_column(Integer)
+    team_name: Mapped[str] = mapped_column(String(60))
+    value: Mapped[float] = mapped_column(Float)
+    # JSON: the team's row of the award table when it was recorded.
+    detail: Mapped[str] = mapped_column(Text)
+    recorded_by: Mapped[str] = mapped_column(String(254))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class RateBucket(Base):
     __tablename__ = "rate_buckets"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
