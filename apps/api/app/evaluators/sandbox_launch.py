@@ -27,9 +27,11 @@ another run; every process of that user is killed when the step ends. It can rea
 network and read whatever that user may read.
 
 Exit status: the step's own, but 125 when the sandbox could not start (the machine's
-fault, never the team's) and 137 when this launcher's timer stopped it. A step that itself
-exits with 125 or 255 is reported as 1, so it cannot pass for either fault or for a
-dropped SSH link. Killing this launcher kills the whole sandbox with it.
+fault, never the team's), 137 when this launcher's timer stopped it and 124 when the
+files under <run>/output passed spec["max_output"] bytes (looked at every second and once
+more at the end, here, so the worker need not ask over SSH). A step that itself exits with
+124, 125 or 255 is reported as 1, so it cannot pass for any of these or for a dropped SSH
+link. Killing this launcher kills the whole sandbox with it.
 """
 import glob
 import json
@@ -38,6 +40,7 @@ import posixpath
 import select
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -48,7 +51,7 @@ try:
 except Exception:  # no ctypes, or not Linux (tests import this file anywhere)
     LIBC = None
 
-FAULT, KILLED = 125, 137
+FAULT, KILLED, OUTPUT_OVER = 125, 137, 124
 PR_SET_PDEATHSIG, PR_SET_NO_NEW_PRIVS = 1, 38
 # Without isolation: the account name the step sees, so nothing looks its uid up.
 RUN_USER = "admin-eval-run"
@@ -321,6 +324,36 @@ def prepare_direct(spec):
     return (*plan_direct(spec, os.environ.get("HOME", "")), become(uid, spec.get("tasks")), uid)
 
 
+def directory_size(path):
+    """Bytes in the regular files under `path`, links not followed."""
+    total = 0
+    for top, _, names in os.walk(path):
+        for name in names:
+            try:
+                status = os.lstat(os.path.join(top, name))
+            except OSError:
+                continue  # removed meanwhile
+            if stat.S_ISREG(status.st_mode):
+                total += status.st_size
+    return total
+
+
+def wait(process, seconds, output, limit):
+    """"done", "timeout" or "output": waits for the step, and with a `limit` looks every
+    second whether the files under `output` passed it."""
+    deadline = time.monotonic() + seconds
+    while True:
+        left = deadline - time.monotonic()
+        try:
+            process.wait(timeout=max(0.0, left if limit is None else min(left, 1.0)))
+            return "done"
+        except subprocess.TimeoutExpired:
+            if time.monotonic() >= deadline:
+                return "timeout"
+            if directory_size(output) > limit:
+                return "output"
+
+
 def main():
     home, pidfile, uid = os.environ.get("HOME", ""), None, None
     try:
@@ -354,14 +387,12 @@ def main():
         os.close(write)
     except Exception as error:  # anything here is the machine's or the worker's fault
         fail(f"could not start: {type(error).__name__}: {error}")
+    output, limit = f"{spec['run']}/output", spec.get("max_output")
     try:
-        killed = False
-        try:
-            process.wait(timeout=spec["seconds"])
-        except subprocess.TimeoutExpired:
+        stopped = wait(process, spec["seconds"], output, limit)
+        if stopped != "done":
             process.kill()
             process.wait()
-            killed = True
         if direct:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -377,12 +408,15 @@ def main():
                 os.remove(pidfile)
             except OSError:
                 pass
-    if killed:
+    if stopped == "timeout":
         sys.exit(KILLED)
     if not started:
         fail(f"the step did not start (exit code {process.returncode}; the message of bwrap or env is above)")
+    if limit is not None and (stopped == "output" or directory_size(output) > limit):
+        sys.stderr.write(f"sandbox: the output passed {limit} bytes; the step was stopped\n")
+        sys.exit(OUTPUT_OVER)
     code = process.returncode if process.returncode >= 0 else 128 - process.returncode
-    sys.exit(1 if code in (FAULT, 255) else code)
+    sys.exit(1 if code in (FAULT, OUTPUT_OVER, 255) else code)
 
 
 if __name__ == "__main__":

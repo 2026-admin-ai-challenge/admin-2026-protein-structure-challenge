@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import docker as local
-from .base import failure
+from .base import Shared, failure
 
 SSH_PORT = os.getenv("EVAL_SSH_PORT", "22")
 # Only the private key's FILE is configured, never its content.
@@ -61,7 +61,8 @@ GPU_CONTAINER_SECONDS = 60
 OK_CACHE_SECONDS, FAILED_CACHE_SECONDS = 60, 15
 # Starting a GPU container is the slow check: a machine that passed it is spared it this long.
 GPU_CONTAINER_CACHE_SECONDS = 600
-# Output size is polled over SSH, so less often than docker.py does on its own disk.
+# Output size is polled over SSH, so less often than docker.py does on its own disk. Docker
+# there only: the sandbox launcher watches it on the machine itself.
 OUTPUT_CHECK_SECONDS = 3
 FETCH_SECONDS = 60
 # Leftovers of dead workers are looked for at most this often.
@@ -529,13 +530,11 @@ class RemoteEvaluator(local.DockerEvaluator):
     FAULT_CODES = (255,)
 
     def __init__(self):
-        self._verdict = None             # (valid until, target, (ok, detail))
+        self.shared = Shared()           # checks and GPU readings; app.worker's slots share one
         self._verified = None            # the target that last passed every check
-        self._gpu_proved = (None, 0.0)   # (target, valid until)
         self._active = None              # the target the running submission is bound to
         self._containers = []            # container names started by the running submission
         self._gpu = None                 # EVAL_GPU_PICK=free: the GPU the running submission was handed
-        self._gpu_asked_at = float("-inf")
         self._pruned_at = float("-inf")
         self._size = (0.0, 0)
 
@@ -546,7 +545,12 @@ class RemoteEvaluator(local.DockerEvaluator):
     # -- readiness --
 
     def _forget(self):
-        self._verdict, self._verified, self._gpu_proved = None, None, (None, 0.0)
+        self._verified = None
+        self.shared.forget()
+
+    def _check_key(self, target):
+        """What a check result is for: another key is checked anew."""
+        return target
 
     def _examine(self, target, prove):
         """(checks, facts): `facts` is what _summary needs once every check passed."""
@@ -560,46 +564,61 @@ class RemoteEvaluator(local.DockerEvaluator):
         return describe(target, checks)
 
     def ready(self):
-        now = time.monotonic()
         try:
             target = load_target()
         except TargetInvalid as error:
             self._forget()
             return False, describe(None, [settings_failure(error)])
-        if self._verdict and self._verdict[1] == target and now < self._verdict[0]:
-            return self._verdict[2]
-        prove = not (self._gpu_proved[0] == target and now < self._gpu_proved[1])
-        checks, facts = self._examine(target, prove)
+        checks, facts = self._checked(target)
         if all(check.ok for check in checks):
-            if prove:
-                self._gpu_proved = (target, time.monotonic() + GPU_CONTAINER_CACHE_SECONDS)
             self._verified = target
-            result = True, self._summary(target, facts)
-            ttl = OK_CACHE_SECONDS
-        else:
-            self._verified, self._gpu_proved = None, (None, 0.0)
-            result, ttl = (False, self._describe(target, checks)), FAILED_CACHE_SECONDS
-        self._verdict = (time.monotonic() + ttl, target, result)
-        return result
+            return True, self._summary(target, facts)
+        self._verified = None
+        return False, self._describe(target, checks)
+
+    def _checked(self, target):
+        """(checks, facts) of the last check, made again once it is too old. One slot checks at
+        a time, and the others take its result instead of asking the machine themselves."""
+        key, shared = self._check_key(target), self.shared
+        with shared.checking:
+            until, checks, facts = shared.verdicts.get(key, (0.0, None, None))
+            if time.monotonic() < until:
+                return checks, facts
+            prove = time.monotonic() >= shared.proved.get(key, 0.0)
+            checks, facts = self._examine(target, prove)
+            ok = all(check.ok for check in checks)
+            if ok and prove:
+                shared.proved[key] = time.monotonic() + GPU_CONTAINER_CACHE_SECONDS
+            elif not ok:
+                shared.proved.pop(key, None)
+            shared.verdicts[key] = (time.monotonic() + (OK_CACHE_SECONDS if ok else FAILED_CACHE_SECONDS), checks, facts)
+            return checks, facts
 
     def free_gpus(self, held=()):
-        """EVAL_GPU_PICK=free: the GPUs of EVAL_GPUS that are nearly empty now and not `held`,
-        emptiest first. Asked right before a run is handed one. While there is none, the
-        machine is asked again only every GPU_RECHECK_SECONDS and gpu_note says why."""
-        if time.monotonic() - self._gpu_asked_at < GPU_RECHECK_SECONDS:
-            return []
-        try:
-            code, out, err = _run(self._target(), remote_shell(LOAD_SCRIPT), CHECK_SECONDS)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            code, out, err = -1, "", f"{type(error).__name__}: {error}"
-        problem = dict(_pairs(out)).get("nvidia_error") if code == 0 else (_first_line(err) or f"종료 코드 {code}")
-        load = {} if problem else gpu_load(out)
-        free = usable_gpus(load, held)
-        if free:
-            self._gpu_asked_at, self.gpu_note = float("-inf"), None
-        else:
-            self._gpu_asked_at, self.gpu_note = time.monotonic(), busy_note(load, held, problem)
+        """EVAL_GPU_PICK=free: the GPUs of EVAL_GPUS that are nearly empty and not `held`,
+        emptiest first, by a reading at most GPU_RECHECK_SECONDS old that every slot shares.
+        While there is none, gpu_note says why."""
+        load, problem = self._gpu_load()
+        free = [] if problem else usable_gpus(load, held)
+        self.gpu_note = None if free else busy_note(load, held, problem)
         return free
+
+    def _gpu_load(self):
+        """(load, problem): the machine's GPU load, read again once the last reading is
+        GPU_RECHECK_SECONDS old. Our own runs need no fresher one: the worker leaves out the
+        GPUs they hold, by the database."""
+        target, shared = self._target(), self.shared
+        with shared.reading:
+            if shared.load and shared.load[0] == target and time.monotonic() - shared.load[1] < GPU_RECHECK_SECONDS:
+                return shared.load[2:]
+            try:
+                code, out, err = _run(target, remote_shell(LOAD_SCRIPT), CHECK_SECONDS)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                code, out, err = -1, "", f"{type(error).__name__}: {error}"
+            problem = dict(_pairs(out)).get("nvidia_error") if code == 0 else (_first_line(err) or f"종료 코드 {code}")
+            load = {} if problem else gpu_load(out)
+            shared.load = (target, time.monotonic(), load, problem)
+            return load, problem
 
     # -- one run --
 

@@ -249,15 +249,16 @@ def test_slots_are_threads_of_their_own_and_one_that_stops_starts_again(monkeypa
     import threading
     from app import worker
 
-    threads, runs, release = [], [], threading.Event()
+    threads, runs, shares, release = [], [], set(), threading.Event()
 
     class Recorded(threading.Thread):
         def start(self):
             threads.append(self)
             super().start()
 
-    def run_forever(worker_id, run_uid):
+    def run_forever(worker_id, run_uid, shared):
         runs.append((worker_id, run_uid))
+        shares.add(id(shared))
         if not (worker_id == "gpu-box-2" and runs.count(("gpu-box-2", 64001)) == 1):  # slot 2's first thread stops at once
             release.wait(5)
 
@@ -283,17 +284,26 @@ def test_slots_are_threads_of_their_own_and_one_that_stops_starts_again(monkeypa
     assert [thread.name for thread in threads] == ["slot-1", "slot-2", "slot-3", "slot-2"]
     assert all(thread.daemon for thread in threads)  # they end with the process
     assert sorted(runs) == [("gpu-box-1", 64000), ("gpu-box-2", 64001), ("gpu-box-2", 64001), ("gpu-box-3", 64002)]
+    assert len(shares) == 1  # one check of the GPU machine for all of them
 
 
 def test_a_slot_reports_under_its_own_name_and_its_evaluator_runs_as_its_own_user(db, monkeypatch):
     from sqlalchemy.orm import sessionmaker
     from app import worker
+    from app.evaluators.base import Shared
+    from app.evaluators.remote import RemoteEvaluator
 
-    evaluator = MockEvaluator()
+    evaluator, shared = RemoteEvaluator(), Shared()
+    evaluator.ready = lambda: (False, "waiting")
     monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=db.get_bind(), expire_on_commit=False))
     monkeypatch.setattr(worker, "get_evaluator", lambda: evaluator)
-    worker.run_forever(once=True, worker_id="gpu-box-3", run_uid=64002)
-    assert evaluator.run_uid == 64002 and db.scalars(select(Worker.id)).all() == ["gpu-box-3"]
+    worker.run_forever(once=True, worker_id="gpu-box-3", run_uid=64002, shared=shared)
+    assert evaluator.run_uid == 64002 and evaluator.shared is shared
+    assert db.scalars(select(Worker.id)).all() == ["gpu-box-3"]
+    mock = MockEvaluator()
+    monkeypatch.setattr(worker, "get_evaluator", lambda: mock)
+    worker.run_forever(once=True, worker_id="gpu-box-4", shared=shared)
+    assert mock.shared is None  # it asks no machine
 
 
 def test_the_worker_hands_the_settings_to_its_evaluator_before_each_check(db, monkeypatch):

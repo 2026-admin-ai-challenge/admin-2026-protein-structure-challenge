@@ -29,7 +29,7 @@ from .config import EVALUATOR, WORKER_SLOTS, WORKER_STALE_SECONDS as STALE_SECON
 from .db import SessionLocal
 from .errors import FAILURES, UNCOUNTED_FAILURES
 from .evaluators import get_evaluator
-from .evaluators.base import failure
+from .evaluators.base import Shared, failure
 from .leaderboard import rebuild
 from .models import Settings, Submission, Worker, now
 from .scoring.predictions import OutputRejected, check, contract_problem
@@ -215,10 +215,12 @@ def rescore(db):
     return count
 
 
-def run_forever(once=False, worker_id=None, run_uid=None):
+def run_forever(once=False, worker_id=None, run_uid=None, shared=None):
     worker_id, evaluator = worker_id or worker_name(), get_evaluator()
     if run_uid is not None:
         evaluator.run_uid = run_uid  # EVALUATOR=sandbox without isolation: the user this slot's steps run as
+    if shared is not None and evaluator.shared is not None:
+        evaluator.shared = shared  # one check of the GPU machine for every slot
     log.info("worker %s started with evaluator=%s", worker_id, evaluator.name)
     labels_checked = evaluator.name == "mock"  # the mock never reads hidden labels
     while True:
@@ -262,13 +264,15 @@ def run_slots(count):
     the scoring libraries take ~185 MB in every process and the web VM has under 1 GB, while a
     slot spends its time waiting on the GPU machine, not running Python. Every slot has its own
     name and its own EVAL_SANDBOX_RUN_UID: a sandbox run without isolation kills every process
-    of its uid after each step, so slots sharing one would kill each other's runs."""
+    of its uid after each step, so slots sharing one would kill each other's runs. They share
+    what they learn of the GPU machine (Shared), so it is checked once for all of them."""
     base = os.getenv("WORKER_NAME") or socket.gethostname()
     uid = int(os.getenv("EVAL_SANDBOX_RUN_UID", "64000"))
+    shared = Shared()
 
     def start(slot):
         thread = threading.Thread(target=run_forever, name=f"slot-{slot}", daemon=True,
-                                  kwargs={"worker_id": f"{base}-{slot}", "run_uid": uid + slot - 1})
+                                  kwargs={"worker_id": f"{base}-{slot}", "run_uid": uid + slot - 1, "shared": shared})
         thread.start()
         return thread
 

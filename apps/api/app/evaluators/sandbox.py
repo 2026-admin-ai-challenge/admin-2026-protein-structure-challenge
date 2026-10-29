@@ -56,6 +56,7 @@ RUN_UID = int(os.getenv("EVAL_SANDBOX_RUN_UID", "64000"))
 LAUNCHER = Path(__file__).with_name("sandbox_launch.py").read_text(encoding="utf-8")
 MARKER = "admin-eval-sandbox"
 FAULT = 125
+OUTPUT_OVER = 124  # sandbox_launch.py's: the step's /output passed spec["max_output"]
 PROBE_SECONDS = 60
 SETUP = "apps/evaluator/setup-server.sh"
 
@@ -399,12 +400,14 @@ class SandboxEvaluator(remote.RemoteEvaluator):
         self.run_uid = RUN_UID  # without isolation as root; each worker slot sets its own
 
     def configure(self, settings):
-        """Takes Settings.eval_isolation. A change throws away every verdict: the next
-        submission waits until the machine passed the checks of the new way."""
+        """Takes Settings.eval_isolation. Checks are kept for each way (_check_key), so after a
+        change the next submission waits until the machine passed the checks of the new way."""
         isolation = True if settings is None else bool(settings.eval_isolation)
         if isolation != self._isolation:
-            self._isolation = isolation
-            self._forget()
+            self._isolation, self._verified = isolation, None
+
+    def _check_key(self, target):
+        return target, self._isolation
 
     def _examine(self, target, prove):
         return examine(target, probe=prove, isolation=self._isolation, run_uid=self.run_uid)
@@ -436,8 +439,17 @@ class SandboxEvaluator(remote.RemoteEvaluator):
 
     def _inference_command(self, name, code_dir, output_dir, volume):
         step = spec("infer", self._run_dir, local.INFERENCE_TIMEOUT_SECONDS + local.KILL_GRACE_SECONDS, self._pidfile(name),
-                    self._isolation, self.run_uid, command=shlex.split(local.COMMAND), deps=volume is not None, gpus=self._gpus())
+                    self._isolation, self.run_uid, command=shlex.split(local.COMMAND), deps=volume is not None, gpus=self._gpus(),
+                    max_output=local.MAX_OUTPUT_BYTES)
         return launch_command(step)
+
+    def _watch(self, name, command, limit, tick, output_dir=None):
+        """The launcher watches the output directory itself (spec max_output) and exits with
+        OUTPUT_OVER, so its size is not asked over SSH every few seconds during a run."""
+        code, log, stopped_for, elapsed = super()._watch(name, command, limit, tick)
+        if code == OUTPUT_OVER and stopped_for is None:
+            stopped_for = "output_invalid"
+        return code, log, stopped_for, elapsed
 
     def _kill_command(self, name):
         return ["sh", "-c", STOP, "sh", self._pidfile(name)]

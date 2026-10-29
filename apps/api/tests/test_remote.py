@@ -224,8 +224,29 @@ def test_ready_machine_proves_the_gpu_only_now_and_then(monkeypatch, tmp_path, g
     evaluator = RemoteEvaluator()
     ok, detail = evaluator.ready()
     assert ok and "GPU 0 Tesla P100-PCIE-16GB" in detail and "evaluator@100.64.0.10:2222" in detail
-    evaluator._verdict = None  # as if the cache ran out
+    evaluator.shared.verdicts.clear()  # as if the cache ran out
     assert evaluator.ready()[0] and calls == [True, False]
+
+
+def test_slots_of_one_worker_check_the_machine_and_read_its_gpus_once_for_all(monkeypatch, tmp_path, gpu_zero):
+    # app.worker's slots are threads that share one Shared; each check is an SSH connection.
+    ready_machine(monkeypatch, tmp_path)
+    calls = []
+
+    def fake(target, gpu_container=True):
+        calls.append(gpu_container)
+        return [Check("os", True)], [["0", "Tesla P100-PCIE-16GB", "535.183.01", "16384 MiB"]]
+
+    monkeypatch.setattr(remote, "preflight", fake)
+    first, second = RemoteEvaluator(), RemoteEvaluator()
+    second.shared = first.shared
+    assert first.ready()[0] and second.ready()[0] and calls == [True]
+    monkeypatch.setattr(local, "GPU_PICK", "free")
+    monkeypatch.setattr(local, "GPUS", "all")
+    sent = scripted(monkeypatch, (0, "gpu=0, 10, 0\ngpu=1, 300, 0\n", ""))
+    assert first.free_gpus() == ["0", "1"] and second.free_gpus(held={"0"}) == ["1"] and len(sent) == 1
+    first._forget()  # a run of the first slot ended in a server error
+    assert second._verified is not None and second.ready()[0] and calls == [True, True]  # checked again, for all
 
 
 # --- the whole run, with a fake ssh that runs the remote command here and a fake docker ---
@@ -343,11 +364,11 @@ def test_a_planted_link_is_not_followed(fake_machine):
 def test_an_unreachable_machine_is_a_server_error_and_is_checked_again(fake_machine, monkeypatch):
     monkeypatch.setenv("FAKE_SSH_DOWN", "1")
     evaluator = passed()
-    evaluator._verdict = (float("inf"), evaluator._verified, (True, "cached"))
+    evaluator.shared.verdicts[evaluator._verified] = (float("inf"), [Check("os", True)], [])
     outcome = run_with(fake_machine, "ok", evaluator)
     assert outcome.failure_code == "system_error" and "Connection refused" in outcome.log
     # The next submission waits until the machine passes every check again.
-    assert evaluator._verified is None and evaluator._verdict is None
+    assert evaluator._verified is None and evaluator.shared.verdicts == {}
 
 
 def test_checks_run_by_hand_print_each_reason(monkeypatch, capsys, tmp_path, gpu_zero):
@@ -453,14 +474,21 @@ def test_the_queue_waits_while_no_gpu_is_free_and_says_why(monkeypatch, gpu_zero
                     (0, "nvidia_error=NVIDIA-SMI has failed\n", ""))
     evaluator = RemoteEvaluator()
     evaluator._verified = TARGET
+
+    def later():
+        target, read_at, *reading = evaluator.shared.load
+        evaluator.shared.load = (target, read_at - remote.GPU_RECHECK_SECONDS, *reading)
+
     assert evaluator.free_gpus(held={"2"}) == []
     note = evaluator.gpu_note
     assert "GPU 0 15708 MiB·0%" in note and "GPU 1 300 MiB·95%" in note and "GPU 2 다른 슬롯이 채점 중" in note
     assert "nvidia-smi --query-gpu=index,memory.used,utilization.gpu" in sent[0]
-    assert evaluator.free_gpus() == [] and len(sent) == 1  # not asked again at once
-    evaluator._gpu_asked_at -= remote.GPU_RECHECK_SECONDS
-    assert evaluator.free_gpus(held={"2"}) == ["1"] and evaluator.gpu_note is None
-    assert evaluator.free_gpus() == [] and "NVIDIA-SMI has failed" in evaluator.gpu_note  # asked at once after a hit
+    assert evaluator.free_gpus(held={"2"}) == [] and len(sent) == 1  # not asked again at once
+    assert evaluator.free_gpus() == ["2"] and evaluator.gpu_note is None  # our run let it go
+    later()
+    assert evaluator.free_gpus(held={"2"}) == ["1"] and len(sent) == 2
+    later()
+    assert evaluator.free_gpus() == [] and "NVIDIA-SMI has failed" in evaluator.gpu_note
 
 
 def test_a_run_gets_only_the_gpu_it_was_handed(monkeypatch, tmp_path):
