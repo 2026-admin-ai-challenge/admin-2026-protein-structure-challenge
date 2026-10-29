@@ -1,9 +1,12 @@
-"""The special award winners organizers record on the admin page."""
+"""The special award winners organizers record on the admin page.
+
+Follows 0005_submission_gpu from PR #32, which must be merged first.
+"""
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0005"
-down_revision = "0004"
+revision = "0006"
+down_revision = "0005"
 branch_labels = None
 depends_on = None
 
