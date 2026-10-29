@@ -155,7 +155,7 @@ export default function SubmissionPanel({
         <div className="sign-in-card">
           <Lock size={28} />
           <h3>제출하려면 로그인하세요</h3>
-          <p>운영진에게 받은 팀 아이디로 로그인합니다.</p>
+          <p>팀 이름과 운영진에게 받은 비밀번호로 로그인합니다.</p>
           <button className="btn primary" onClick={onLogin}>
             Log in <ArrowRight size={16} />
           </button>

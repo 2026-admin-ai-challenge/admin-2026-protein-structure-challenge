@@ -269,7 +269,7 @@ grep -Eq '^EVAL_SSH_HOST=[^[:space:]]' .env && dc="$dc -f docker-compose.remote.
 - `.env`의 `SECRET_KEY`와 `POSTGRES_PASSWORD`를 새 난수로 바꿉니다. URL에 들어가는 비밀번호는 영숫자를 쓰거나 URL 인코딩합니다.
 - TLS 리버스 프록시를 `gateway`의 3000 포트 앞에 두고 정확한 `APP_ORIGIN`, `COOKIE_SECURE=true`를 설정합니다. `gateway`는 기본으로 loopback에만 열려 있습니다.
 - **앞단 프록시의 요청 본문 한도를 ZIP 상한(500 MB)보다 크게** 잡고, 업로드가 끝날 때까지 끊기지 않게 요청 시간 제한을 늘립니다. 한도가 작으면 큰 ZIP이 접수되지 않습니다. 대회 전에 실제 크기의 파일로 올려 봅니다.
-- 앱은 전달된 `X-Forwarded-For`를 신뢰하지 않습니다. 로그인 시도 제한은 아이디별로 분당 10회입니다(관리자 계정은 제한 없음).
+- 앱은 전달된 `X-Forwarded-For`를 신뢰하지 않습니다. 로그인 시도 제한은 입력한 팀 이름별로 분당 10회입니다(관리자 아이디로 로그인하면 제한 없음).
 - Linux에서 데이터 디렉터리는 컨테이너 UID 10001이 읽을 수 있어야 합니다(실제 채점 모드의 worker는 root로 실행).
 
 ## 데이터 공개 정책

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app import files, storage
 from app.evaluators.mock import MockEvaluator
-from app.models import AuditLog, Submission, SubmissionFile
+from app.models import AuditLog, LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, now
 from app.worker import process_one
 from conftest import add_account, login, make_zip, upload
 
@@ -157,3 +157,68 @@ def test_verify_finds_missing_changed_and_orphan_files(client, db, participant, 
         assert [entry.ok for entry in log] == [True, False]
     finally:
         orphan.unlink()
+
+
+def test_admin_deletes_a_team_with_everything_it_owns(client, db, participant, organizer):
+    scored = upload(client, mock_zip(public=0.9, private=0.9)).json()
+    other = add_account(db, "Other team", "otherteam")
+    login(client, other)
+    kept = upload(client, mock_zip(public=0.5, private=0.5)).json()
+    process_one(db, MOCK, "worker-a")
+    process_one(db, MOCK, "worker-a")
+    login(client, participant)
+    session = client.cookies.get("admin_session")
+    waiting = upload(client, mock_zip(public=0.1)).json()  # still queued: deleted along with the rest
+    paths = [storage.path_for(row.storage_key) for row in db.scalars(select(SubmissionFile).where(SubmissionFile.team_id == participant["team_id"]))]
+    assert len(paths) == 2 and all(path.exists() for path in paths)
+    team_id = participant["team_id"]
+    assert client.post(f"/api/admin/teams/{team_id}/delete", json={"confirm": "Protein Learners"}).status_code == 403
+
+    client.cookies.set("admin_session", organizer)
+    # The organizer types the team name to confirm, compared like a sign-in name.
+    for wrong in ["", "Protein Learner", "Other team"]:
+        refused = client.post(f"/api/admin/teams/{team_id}/delete", json={"confirm": wrong})
+        assert refused.status_code == 422 and "Protein Learners" in refused.json()["detail"]
+    organizers = db.scalar(select(Team).where(Team.name == "Organizers"))
+    assert client.post(f"/api/admin/teams/{organizers.id}/delete", json={"confirm": "Organizers"}).status_code == 409
+    # A submission being scored right now blocks the deletion.
+    row = db.get(Submission, waiting["id"])
+    row.status, row.heartbeat_at = "running", now()
+    db.commit()
+    busy = client.post(f"/api/admin/teams/{team_id}/delete", json={"confirm": "Protein Learners"})
+    assert busy.status_code == 409 and "채점 중" in busy.json()["detail"]
+    row.status, row.heartbeat_at = "queued", None
+    db.commit()
+
+    deleted = client.post(f"/api/admin/teams/{team_id}/delete", json={"confirm": " protein  LEARNERS "})
+    assert deleted.status_code == 200, deleted.text
+    body = deleted.json()
+    assert (body["name"], body["accounts"], body["submissions"], body["files"], body["not_deleted"]) == (
+        "Protein Learners", ["teamlearner"], 2, 2, [])
+    db.expire_all()
+    assert db.get(Team, team_id) is None and db.get(User, participant["id"]) is None
+    assert db.scalars(select(Submission.id)).all() == [kept["id"]]
+    assert [row.team_id for row in db.scalars(select(SubmissionFile))] == [other["team_id"]]
+    assert [row.team_id for row in db.scalars(select(LeaderboardEntry))] == [other["team_id"]]
+    assert not any(path.exists() for path in paths)
+    assert [entry["team"] for entry in client.get("/api/leaderboard").json()["entries"]] == ["Other team"]
+    assert "Protein Learners" not in [team["name"] for team in client.get("/api/admin/teams").json()]
+    log = db.scalar(select(AuditLog).where(AuditLog.action == "team.delete"))
+    assert log.actor == "organizer" and log.target == f"team:{team_id}" and "teamlearner" in log.detail
+    assert client.post(f"/api/admin/teams/{team_id}/delete", json={"confirm": "Protein Learners"}).status_code == 404
+    # The team's session and sign-in are gone (signed out, not "blocked"); the name can be used again.
+    client.cookies.set("admin_session", session)
+    assert client.get("/api/auth/me").status_code == 401
+    client.cookies.clear()
+    assert client.post("/api/auth/login", json={"username": "Protein Learners", "password": participant["password"]}).status_code == 401
+    client.cookies.set("admin_session", organizer)
+    assert client.post("/api/admin/teams", json={"name": "Protein Learners"}).status_code == 201
+
+
+def test_teams_cannot_be_deleted_after_the_final_ranking(client, db, participant, organizer):
+    settings = db.get(Settings, 1)
+    settings.finalized = True
+    db.commit()
+    client.cookies.set("admin_session", organizer)
+    refused = client.post(f"/api/admin/teams/{participant['team_id']}/delete", json={"confirm": "Protein Learners"})
+    assert refused.status_code == 409 and db.get(Team, participant["team_id"]) is not None

@@ -111,7 +111,9 @@ def client(db):
     app.dependency_overrides.clear()
 
 
-def add_account(db, team_name, username, password="Temp-Password-42"):
+def add_account(db, team_name, username, password=None):
+    # Accounts of one team sign in with the same team name, so each gets its own password.
+    password = password or f"Temp-{username}-42"
     team = db.query(Team).filter_by(name=team_name).first()
     if not team:
         team = Team(name=team_name)
@@ -123,7 +125,9 @@ def add_account(db, team_name, username, password="Temp-Password-42"):
 
 
 def login(client, account):
-    response = client.post("/api/auth/login", json={"username": account["username"], "password": account["password"]})
+    """Participants sign in with their team name; pass `username` to sign in as an organizer."""
+    name = account.get("team_name") or account["username"]
+    response = client.post("/api/auth/login", json={"username": name, "password": account["password"]})
     assert response.status_code == 200, response.text
     return client.cookies.get("admin_session")
 

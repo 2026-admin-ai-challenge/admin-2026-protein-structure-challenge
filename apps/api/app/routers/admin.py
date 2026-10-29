@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from .. import files, reset, storage
-from ..accounts import create_user, random_password
+from ..accounts import create_user, name_conflict, random_password, remove_team, team_key
 from ..audit import record
 from ..dataset import metadata, public_file_report
 from ..db import get_db
@@ -16,7 +16,7 @@ from ..errors import UNCOUNTED_FAILURES
 from ..leaderboard import rebuild
 from ..models import AuditLog, LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now, utc
 from ..schemas import (BanPatch, CompetitionReset, CountedPatch, FileDelete, LockPatch, SettingsPatch, TeamCreate,
-                       UserCreate)
+                       TeamDelete, UserCreate)
 from ..security import admin_user, hasher
 from .common import (PENDING, admin_settings_view, evaluator_name, limits_view, queue_positions, submission_view,
                      used_attempts)
@@ -137,6 +137,9 @@ def teams(admin=Depends(admin_user), db=Depends(get_db)):
 
 @router.post("/teams", status_code=201)
 def create_team(body: TeamCreate, admin=Depends(admin_user), db=Depends(get_db)):
+    conflict = name_conflict(db, body.name)
+    if conflict:
+        raise HTTPException(409, conflict)
     team = Team(name=body.name)
     db.add(team)
     try:
@@ -154,6 +157,9 @@ def rename_team(id: int, body: TeamCreate, admin=Depends(admin_user), db=Depends
     team = db.get(Team, id)
     if not team:
         raise HTTPException(404, "팀이 없습니다.")
+    conflict = name_conflict(db, body.name, team.id)
+    if conflict:
+        raise HTTPException(409, conflict)
     previous, team.name = team.name, body.name
     try:
         db.flush()
@@ -163,6 +169,39 @@ def rename_team(id: int, body: TeamCreate, admin=Depends(admin_user), db=Depends
     record(db, admin, "team.rename", f"team:{team.id}", {"from": previous, "to": team.name})
     db.commit()
     return {"id": team.id, "name": team.name}
+
+
+@router.post("/teams/{id}/delete")
+def delete_team(id: int, body: TeamDelete, admin=Depends(admin_user), db=Depends(get_db)):
+    """Deletes a participant team with its accounts, submissions, ZIPs and ranking entries
+    for good, e.g. a test team or one that withdrew. The audit log keeps what was deleted."""
+    s = locked_settings(db)
+    if s.finalized:
+        raise HTTPException(409, "최종 순위 공개 후에는 팀을 삭제할 수 없습니다.")
+    team = db.get(Team, id)
+    if not team:
+        raise HTTPException(404, "팀이 없습니다.")
+    # Compared like sign-in names: a name can hold spaces the page does not show.
+    if team_key(body.confirm) != team_key(team.name):
+        raise HTTPException(422, f'확인을 위해 팀 이름 "{team.name}"을 입력하세요.')
+    try:
+        summary, paths = remove_team(db, team)
+    except ValueError as error:
+        db.rollback()
+        raise HTTPException(409, str(error))
+    record(db, admin, "team.delete", f"team:{id}", summary)
+    db.commit()
+    # After the commit: a ZIP that cannot be deleted stays on disk, and the file check reports it.
+    not_deleted = []
+    for path in paths:
+        try:
+            storage.discard(path)
+        except OSError as error:
+            not_deleted.append(f"{path.name}: {error.strerror or error}")
+    if not_deleted:
+        record(db, admin, "team.delete", "files", {"name": summary["name"], "not_deleted": not_deleted}, ok=False)
+        db.commit()
+    return {**summary, "not_deleted": not_deleted}
 
 
 @router.post("/users", status_code=201)
@@ -192,7 +231,8 @@ def reset_password(id: int, admin=Depends(admin_user), db=Depends(get_db)):
     user.password_hash = hasher.hash(password)  # also signs the account out everywhere
     record(db, admin, "user.reset_password", f"user:{user.username}")
     db.commit()
-    return {**account_view(user), "temporary_password": password}
+    return {**account_view(user), "team_id": user.team_id, "team_name": db.get(Team, user.team_id).name,
+            "temporary_password": password}
 
 
 @router.patch("/users/{id}")

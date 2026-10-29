@@ -22,6 +22,7 @@ def clean_username(value):
 
 
 class Login(BaseModel):
+    # A participant's team name, or an organizer's own ID.
     username: str = Field(min_length=1, max_length=254)
     password: str = Field(min_length=1, max_length=128)
 
@@ -73,6 +74,11 @@ class SettingsPatch(BaseModel):
 class CompetitionReset(BaseModel):
     # The organizer types the confirmation phrase, so a stray request cannot wipe a competition.
     confirm: str = Field(max_length=40)
+
+
+class TeamDelete(BaseModel):
+    # The organizer types the team name, so a stray click cannot delete a team.
+    confirm: str = Field(max_length=100)
 
 
 class BanPatch(BaseModel):

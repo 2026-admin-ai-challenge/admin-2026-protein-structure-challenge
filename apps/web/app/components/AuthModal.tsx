@@ -54,10 +54,10 @@ export default function AuthModal({
         </button>
         <div className="section-kicker">WELCOME TO THE CHALLENGE</div>
         <h2 id="auth-title">Welcome back.</h2>
-        <p>운영진에게 받은 팀 아이디와 비밀번호로 로그인하세요.</p>
+        <p>팀 이름을 아이디로, 운영진에게 받은 비밀번호로 로그인하세요.</p>
         <form onSubmit={submit}>
           <label>
-            아이디
+            팀 이름
             <input
               autoFocus
               name="username"
@@ -66,7 +66,7 @@ export default function AuthModal({
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="배부받은 10자리 아이디"
+              placeholder="등록한 팀 이름 (대소문자·띄어쓰기 구분 없음)"
             />
           </label>
           <label>
@@ -91,8 +91,8 @@ export default function AuthModal({
           </button>
         </form>
         <small className="modal-note">
-          회원가입은 없습니다. 아이디를 받지 못했거나 비밀번호를 잊었다면
-          운영진에게 문의하세요.
+          회원가입은 없습니다. 비밀번호를 받지 못했거나 잊었다면 운영진에게
+          문의하세요.
         </small>
       </section>
     </div>

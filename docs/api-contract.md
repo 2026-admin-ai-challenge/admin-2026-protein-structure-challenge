@@ -54,7 +54,7 @@
 | HTTP | `code` | 상황 |
 | --- | --- | --- |
 | 400 | `bad_request` | Content-Length가 숫자가 아님 |
-| 401 | — | 로그인 필요, 또는 비밀번호 재설정으로 세션 만료 |
+| 401 | — | 로그인 필요, 또는 비밀번호 재설정·팀 삭제로 세션 만료 |
 | 403 | `banned` | 차단된 계정 |
 | 403 | `closed` | 제출 기간이 아님 |
 | 413 | `zip_too_large` | 압축 ZIP이 상한 초과 |
@@ -69,7 +69,7 @@
 
 | 메서드·경로 | 요청 | 응답 |
 | --- | --- | --- |
-| `POST /auth/login` | `{"username","password"}` | 사용자 |
+| `POST /auth/login` | `{"username","password"}`: `username`에 **팀 이름**(운영진은 관리자 아이디도 가능) | 사용자 |
 | `POST /auth/logout` | — | `{"ok":true}` |
 | `GET /auth/me` | — | 사용자 |
 
@@ -77,7 +77,7 @@
 {"id": 12, "username": "k7m2xq9rtd", "display_name": "Team 03", "team_id": 5, "team_name": "Team 03", "role": "USER"}
 ```
 
-아이디는 대소문자를 구분하지 않습니다. 비밀번호를 재설정하면 그 계정의 기존 로그인은 모두 풀립니다.
+모든 계정은 팀 이름과 배부된 비밀번호로 로그인합니다. 운영진도 운영진 팀 이름으로 로그인할 수 있습니다. 팀 이름은 대소문자와 띄어쓰기(빼고 쳐도 됨)를 구분하지 않습니다. 한 팀에 계정이 여럿이면 비밀번호로 어느 계정인지 정해지고, 차단된 계정은 맞지 않습니다. 응답의 `username`은 계정을 구분하는 내부 ID이며 참가자 로그인에는 쓰지 않습니다. 운영진은 관리자 아이디로도 로그인할 수 있고, 관리자 아이디와 같은 이름을 입력하면 관리자 로그인으로 처리합니다. 로그인 시도 제한(팀 이름별 분당 10회)은 관리자 아이디에는 걸리지 않습니다. 비밀번호를 재설정하면 그 계정의 기존 로그인은 모두 풀립니다.
 
 ## 공개 조회
 
@@ -154,9 +154,10 @@
 | `PATCH /admin/competition` | `is_open`, `start_time`, `end_time`, `team_submission_limit`, `count_failed`, `final_selection`, `frozen` |
 | `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
 | `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
-| `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경 |
-| `POST /admin/users` `{"team_id","username"?,"display_name"?}` | 계정 발급. `username`을 빼면 랜덤 10자리, `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴 |
-| `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급 |
+| `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경. 팀 이름은 로그인 아이디이므로 다른 팀과 대소문자·띄어쓰기만 다르거나 관리자 아이디와 같으면 409 |
+| `POST /admin/teams/{id}/delete` `{"confirm": "<팀 이름>"}` | 팀 영구 삭제. 소속 계정, 제출, 파일 기록과 디스크의 ZIP, 순위 항목을 함께 지움(조작 기록은 남음). 확인 문구가 팀 이름과 같아야 함(대소문자·띄어쓰기 무시, 다르면 422). 최종 공개 후, 관리자 계정이 있는 팀, 채점 중인 제출이 있는 팀은 409(대기 중인 제출은 함께 삭제). 응답: `name`, 지운 계정 ID `accounts`, `submissions`, `files`, 지우지 못한 ZIP `not_deleted` |
+| `POST /admin/users` `{"team_id","username"?,"display_name"?}` | 계정 발급. `username`(내부 ID)을 빼면 랜덤 10자리, `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴. 로그인은 응답의 `team_name`으로 함 |
+| `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급. 응답에 `team_id`, `team_name` 포함 |
 | `PATCH /admin/users/{id}` `{"banned"}` | 차단·해제 |
 | `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함 |
 | `GET /admin/submissions/{id}` | 상세 + `log_tail` + ZIP 보관 여부, 파일 삭제 기록 |

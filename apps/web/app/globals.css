@@ -2529,6 +2529,12 @@ select {
   margin-top: 4px;
   font-size: 12px;
 }
+.text-link.danger {
+  color: #ac5656;
+}
+[data-theme="dark"] .text-link.danger {
+  color: #dba4a4;
+}
 .table-wrap td code {
   font-size: 12px;
 }
