@@ -43,6 +43,9 @@ CPUS = os.getenv("EVAL_CPUS", "4")
 MEMORY = os.getenv("EVAL_MEMORY", "8g")
 PIDS = os.getenv("EVAL_PIDS", "256")
 TMPFS_SIZE = os.getenv("EVAL_TMPFS_SIZE", "1g")
+# GPUs given to the inference container only: "all", or indexes like "0" / "0,1". Empty: none.
+GPUS = os.getenv("EVAL_GPUS", "").strip()
+GPUS_PATTERN = re.compile(r"^(all|\d+(,\d+)*)$")
 # Installing a submission's packages, both passes together. Not counted in the inference limit.
 INSTALL_TIMEOUT_SECONDS = int(os.getenv("EVAL_INSTALL_TIMEOUT_SECONDS", "600"))
 # Docker volume keeping pip's downloads between online installs. Empty: no cache.
@@ -66,6 +69,11 @@ INSTALLER_LABEL = '{{index .Config.Labels "admin-eval.installer"}}'
 INSTALLER_VERSION = "1"
 DEPS, VENV, PIP_CACHE = "/deps", "/deps/venv", "/pip-cache"
 BASE_PATH = "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Runs the inference command inside the container and reports its own 125 or 255 as 1:
+# docker run exits with 125 when docker itself fails and ssh with 255 when the link does,
+# both the server's fault and not counted against the team, so a submission must not be
+# able to pass for either (like sandbox_launch.py).
+STEP_EXIT = '"$@"; c=$?; if [ "$c" -eq 125 ] || [ "$c" -eq 255 ]; then exit 1; fi; exit "$c"'
 # admin-eval-env-<unix time>-<submission>-<random>: the time lets abandoned volumes be found.
 VOLUME_PREFIX = "admin-eval-env-"
 VOLUME_TIME = re.compile(rf"^{VOLUME_PREFIX}(\d+)-")
@@ -115,6 +123,8 @@ def build_command(name, code_dir: Path, output_dir: Path, volume=None):
         "-v", f"{INPUT_HOST_DIR}:/input:ro",
         "-v", f"{_host_path(output_dir)}:/output:rw",
     ]
+    # Only inference sees a GPU, never the package install.
+    command += gpu_args()
     if volume:
         # The submission's packages, read only. `python` resolves to their environment.
         command += ["-v", f"{volume}:{DEPS}:ro", "-e", f"PATH={VENV}/bin:{BASE_PATH}", "-e", f"VIRTUAL_ENV={VENV}"]
@@ -124,7 +134,7 @@ def build_command(name, code_dir: Path, output_dir: Path, volume=None):
         IMAGE,
         # Second timer inside the container: it still stops if the worker dies mid-run.
         "timeout", "--signal=KILL", str(INFERENCE_TIMEOUT_SECONDS + KILL_GRACE_SECONDS),
-        *shlex.split(COMMAND),
+        "sh", "-c", STEP_EXIT, "sh", *shlex.split(COMMAND),
     ]
 
 
@@ -144,16 +154,37 @@ def install_command(name, volume, requirements, online=False, seconds=INSTALL_TI
     ]
 
 
-def _remove_volume(volume):
+def gpu_problem(required=False):
+    """Why EVAL_GPUS cannot be used, or None. The one place its value is judged."""
+    if not GPUS:
+        return "EVAL_GPUS가 비어 있습니다. 사용할 GPU 번호(예: 0 또는 0,1)나 all을 적으세요." if required else None
+    if not GPUS_PATTERN.match(GPUS):
+        return f"EVAL_GPUS는 all 또는 0, 0,1 같은 GPU 번호여야 합니다(지금 값: {GPUS!r})."
+    return None
+
+
+def gpu_args():
+    """`--gpus` for EVAL_GPUS. Docker reads the quoted form as a list of devices."""
+    if not GPUS:
+        return []
+    return ["--gpus", "all" if GPUS == "all" else f'"device={GPUS}"']
+
+
+def _local(command):
+    return command
+
+
+def _remove_volume(volume, wrap=_local):
     try:
-        subprocess.run(["docker", "volume", "rm", "-f", volume], capture_output=True, timeout=60)
+        subprocess.run(wrap(["docker", "volume", "rm", "-f", volume]), capture_output=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         pass  # left for prune_abandoned
 
 
-def prune_abandoned():
+def prune_abandoned(wrap=_local, volumes=True):
     """Removes work directories and package volumes left behind by a worker that died
-    mid-run. Only ones old enough that no live run can still own them are touched."""
+    mid-run. Only ones old enough that no live run can still own them are touched.
+    `wrap` turns a docker command into the one that reaches the daemon holding the volumes."""
     cutoff = time.time() - (2 * (INSTALL_TIMEOUT_SECONDS + INFERENCE_TIMEOUT_SECONDS) + 600)
     for directory in WORK_DIR.glob("submission-*"):
         try:
@@ -161,23 +192,77 @@ def prune_abandoned():
                 shutil.rmtree(directory, ignore_errors=True)
         except OSError:
             pass
+    if not volumes:
+        return
     try:
-        listed = subprocess.run(["docker", "volume", "ls", "-q", "--filter", f"name={VOLUME_PREFIX}"],
+        listed = subprocess.run(wrap(["docker", "volume", "ls", "-q", "--filter", f"name={VOLUME_PREFIX}"]),
                                 capture_output=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return
     for volume in listed.stdout.decode("utf-8", "replace").split():
         created = VOLUME_TIME.match(volume)
         if created and int(created.group(1)) < cutoff:
-            _remove_volume(volume)
+            _remove_volume(volume, wrap)
 
 
 class DockerEvaluator(Evaluator):
+    """Runs on the Docker daemon of this machine. RemoteEvaluator (remote.py) overrides the
+    hooks below to run the same containers on another machine over SSH."""
     name = "docker"
+    # Exit codes that mean the machinery failed rather than the submission's code, besides
+    # 125 (docker itself) and 124/137 for installs. A remote run adds ssh's own 255.
+    FAULT_CODES = ()
+    # Whether a submission's packages live in Docker volumes (SandboxEvaluator: in its run directory).
+    VOLUMES = True
+
+    def _wrap(self, command, guard=False):
+        """The command that reaches this evaluator's Docker daemon. `guard` is for long
+        runs whose exit status is read: see RemoteEvaluator."""
+        return command
+
+    def _prune(self):
+        prune_abandoned(self._wrap, self.VOLUMES)
+
+    # The commands of one run. SandboxEvaluator (sandbox.py) starts the same steps without Docker.
+
+    def _install_command(self, name, volume, requirements, online, seconds):
+        return install_command(name, volume, requirements, online, seconds)
+
+    def _inference_command(self, name, code_dir, output_dir, volume):
+        return build_command(name, code_dir, output_dir, volume)
+
+    def _kill_command(self, name):
+        return ["docker", "kill", name]
+
+    def _drop_volume(self, volume):
+        _remove_volume(volume, self._wrap)
+
+    def _stage(self, work, code_dir, output_dir, tick):
+        """Makes the unpacked submission and an empty output directory visible to Docker.
+        Returns a failure to report, or None. Locally they already are."""
+        return None
+
+    def _unstage(self, work):
+        """Removes what _stage put on the Docker host."""
+
+    def _output_size(self, output_dir):
+        return _directory_size(output_dir)
+
+    def _fetch_output(self, output_dir):
+        """(status, predictions): status is "ok", "missing" or "too_big"."""
+        result = output_dir / OUTPUT_NAME
+        # The container owns /output: never follow a link it may have planted there.
+        if result.is_symlink() or not result.is_file():
+            return "missing", None
+        if result.stat().st_size > MAX_OUTPUT_BYTES:
+            return "too_big", None
+        return "ok", result.read_bytes()
 
     def ready(self):
         if not INPUT_HOST_DIR:
             return False, "EVAL_INPUT_HOST_DIR is not set"
+        if gpu_problem():
+            return False, gpu_problem()
         try:
             probe = subprocess.run(["docker", "image", "inspect", "--format", INSTALLER_LABEL, IMAGE], capture_output=True, timeout=20)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -192,7 +277,7 @@ class DockerEvaluator(Evaluator):
         work = WORK_DIR / f"submission-{submission.id}-{uuid.uuid4().hex[:8]}"
         code_dir, output_dir = work / "submission", work / "output"
         name, volume = f"admin-eval-{submission.id}-{work.name[-8:]}", None
-        prune_abandoned()
+        self._prune()
         try:
             try:
                 requirements = inspect(zip_path)["packages"]
@@ -201,6 +286,9 @@ class DockerEvaluator(Evaluator):
                 return failure("zip_invalid", str(error))
             output_dir.mkdir(parents=True)
             os.chmod(output_dir, 0o777)
+            problem = self._stage(work, code_dir, output_dir, tick)
+            if problem:
+                return problem
             if requirements:
                 volume = f"{VOLUME_PREFIX}{int(time.time())}-{submission.id}-{work.name[-8:]}"
                 problem, source = self._install(f"{name}-install", volume, requirements, tick)
@@ -214,8 +302,9 @@ class DockerEvaluator(Evaluator):
             return failure("system_error", log=f"worker I/O error: {error}")
         finally:
             shutil.rmtree(work, ignore_errors=True)
+            self._unstage(work)
             if volume:
-                _remove_volume(volume)
+                self._drop_volume(volume)
 
     def _install(self, name, volume, requirements, tick):
         """(failure to report or None, where the packages came from). The image's wheels are
@@ -229,14 +318,15 @@ class DockerEvaluator(Evaluator):
             pass_name = f"{name}-{'online' if online else 'offline'}"
             try:
                 code, log, stopped_for, _ = self._watch(
-                    pass_name, install_command(pass_name, volume, requirements, online, seconds), seconds, tick)
+                    pass_name, self._install_command(pass_name, volume, requirements, online, seconds), seconds, tick)
             except OSError as error:
                 return failure("system_error", log=f"could not start docker: {error}"), source
             logs.append(f"--- install from {source}: exit code {code} ---\n{log}")
             if code == 0:
                 return None, source
-            if stopped_for or code in (124, 125, 137) or (online and NETWORK_ERRORS.search(log)):
-                # 124/137: the container's own timer or the OOM killer, 125: docker itself failed.
+            if stopped_for or code in (124, 125, 137, *self.FAULT_CODES) or (online and NETWORK_ERRORS.search(log)):
+                # 124/137: the container's own timer or the OOM killer, 125: docker itself failed,
+                # FAULT_CODES: the connection to a remote daemon.
                 reason = f"timed out after {INSTALL_TIMEOUT_SECONDS} s" if stopped_for else f"exit code {code}"
                 return failure("system_error", log=f"package install failed ({reason})\n" + "\n".join(logs)), source
         errors = " ".join(line.strip() for line in log.splitlines() if line.startswith("ERROR:"))
@@ -259,7 +349,7 @@ class DockerEvaluator(Evaluator):
                 while kept > LOG_TAIL_BYTES and len(tail) > 1:
                     kept -= len(tail.popleft())
 
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(self._wrap(command, guard=True), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         reader = threading.Thread(target=drain, args=(process.stdout,), daemon=True)
         reader.start()
         started = time.monotonic()
@@ -267,10 +357,13 @@ class DockerEvaluator(Evaluator):
         while process.poll() is None:
             if time.monotonic() - started > limit:
                 stopped_for = "timeout"
-            elif output_dir is not None and _directory_size(output_dir) > MAX_OUTPUT_BYTES:
+            elif output_dir is not None and self._output_size(output_dir) > MAX_OUTPUT_BYTES:
                 stopped_for = "output_invalid"
             if stopped_for:
-                subprocess.run(["docker", "kill", name], capture_output=True, timeout=30)
+                try:
+                    subprocess.run(self._wrap(self._kill_command(name)), capture_output=True, timeout=30)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass  # the timer inside the container still stops it; the verdict stays stopped_for
                 break
             tick()
             time.sleep(1)
@@ -285,7 +378,7 @@ class DockerEvaluator(Evaluator):
     def _execute(self, name, code_dir, output_dir, volume, tick):
         try:
             code, log, stopped_for, elapsed = self._watch(
-                name, build_command(name, code_dir, output_dir, volume), INFERENCE_TIMEOUT_SECONDS, tick, output_dir)
+                name, self._inference_command(name, code_dir, output_dir, volume), INFERENCE_TIMEOUT_SECONDS, tick, output_dir)
         except OSError as error:
             return failure("system_error", log=f"could not start docker: {error}")
 
@@ -293,18 +386,17 @@ class DockerEvaluator(Evaluator):
             return failure("timeout", log=log)
         if stopped_for == "output_invalid":
             return failure("output_invalid", "출력 파일이 허용 크기를 넘었습니다.", log)
-        if code == 125:
-            return failure("system_error", log=log)  # docker itself failed (image, daemon, mounts)
+        if code == 125 or code in self.FAULT_CODES:
+            return failure("system_error", log=log)  # docker itself failed (image, daemon, mounts) or the link to it
         if code == 137:
             return failure("out_of_memory", log=log)
         if code != 0:
             # Only the exit status reaches the team, never container output.
             return failure("runtime_error", f"{FAILURES['runtime_error']} (종료 코드 {code})", f"exit code {code}\n{log}")
 
-        result = output_dir / OUTPUT_NAME
-        # The container owns /output: never follow a link it may have planted there.
-        if result.is_symlink() or not result.is_file():
+        status, predictions = self._fetch_output(output_dir)
+        if status == "missing":
             return failure("output_missing", log=log)
-        if result.stat().st_size > MAX_OUTPUT_BYTES:
+        if status == "too_big":
             return failure("output_invalid", "출력 파일이 허용 크기를 넘었습니다.", log)
-        return Outcome(ok=True, predictions=result.read_bytes(), log=log)
+        return Outcome(ok=True, predictions=predictions, log=log)

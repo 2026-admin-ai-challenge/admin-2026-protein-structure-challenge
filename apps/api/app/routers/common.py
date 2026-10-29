@@ -40,7 +40,8 @@ def settings_view(s):
 
 
 def admin_settings_view(s):
-    return {**settings_view(s), "count_failed": s.count_failed, "final_selection": s.final_selection}
+    return {**settings_view(s), "count_failed": s.count_failed, "final_selection": s.final_selection,
+            "eval_isolation": s.eval_isolation}
 
 
 def limits_view(s):

@@ -76,13 +76,33 @@ jobs:
             ssh $ssh_opts "$host" "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin"
 
           # Config the server reads from disk rather than from an image.
-          scp $ssh_opts docker-compose.yml docker-compose.ghcr.yml "$host:~/$root/"
+          scp $ssh_opts docker-compose.yml docker-compose.ghcr.yml docker-compose.remote.yml "$host:~/$root/"
           scp $ssh_opts deploy/nginx.conf "$host:~/$root/deploy/"
 
           ssh $ssh_opts "$host" bash -s <<'REMOTE'
           set -euo pipefail
           cd ~/admin-2026-protein-structure-challenge
           compose="docker compose -f docker-compose.yml -f docker-compose.ghcr.yml"
+          # Remote GPU scoring once the server's .env names the GPU machine; mock until then,
+          # so a deploy never stops on remote settings nobody has written yet. A half-written
+          # set stops `pull` below with the name of the missing value, before anything restarts.
+          if grep -Eq '^EVAL_SSH_HOST=[^[:space:]]' .env 2>/dev/null; then
+            # The key files are checked here so a typo stops the deploy before anything restarts.
+            for name in EVAL_SSH_KEY_FILE EVAL_SSH_KNOWN_HOSTS_FILE; do
+              # As compose reads .env: a ` # comment` after the value and quotes are not part of it.
+              # `|| true`: a missing line must reach the message below, not stop on grep's exit status.
+              file=$( (grep -E "^$name=" .env || true) | tail -n 1 | cut -d= -f2- \
+                | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' | tr -d "\"'")
+              if [ -z "$file" ] || [ ! -f "$file" ]; then
+                echo "remote scoring: $name in .env must name an existing file (now: '$file')" >&2
+                exit 1
+              fi
+            done
+            compose="$compose -f docker-compose.remote.yml"
+            echo "scoring: remote GPU (docker-compose.remote.yml)"
+          else
+            echo "scoring: mock (EVAL_SSH_HOST is not set in .env)"
+          fi
           $compose pull
           $compose up -d
           # One OCPU and 50 GB: old layers add up fast.

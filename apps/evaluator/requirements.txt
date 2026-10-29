@@ -2,6 +2,8 @@
 # its requirements.txt says. Each must appear with the same version in
 # requirements-competition.lock.txt: the image installs them from the wheels of that list.
 # Anything else a submission lists is installed per submission (see install_packages.py).
+# A submission whose requirement the base version already satisfies (`transformers>=5`) uses
+# it; one that asks for another version gets that version in its own environment.
 numpy==2.5.3
 pandas==3.0.6
 scipy==1.18.1
@@ -9,3 +11,11 @@ scikit-learn==1.9.1
 joblib==1.6.0
 # The wheelhouse holds the CPU-only build (no CUDA in the scoring container).
 torch==2.14.1
+# The slowest to install per submission (measured on the GPU machine: 15 s, 4 s, 4 s, 3 s,
+# 3 s and 3 s of a 47 s install of the whole lock, mostly pip compiling their many files).
+transformers==5.18.0
+plotly==7.1.0
+matplotlib==3.11.2
+pyarrow==25.0.1
+SQLAlchemy==2.1.1
+catboost==1.2.10

@@ -70,7 +70,7 @@ def update_competition(body: SettingsPatch, admin=Depends(admin_user), db=Depend
     if s.finalized:
         raise HTTPException(409, "최종 순위가 이미 공개되었습니다.")
     values = body.model_dump(exclude_unset=True)
-    required = ["is_open", "team_submission_limit", "count_failed", "final_selection", "frozen"]
+    required = ["is_open", "team_submission_limit", "count_failed", "final_selection", "frozen", "eval_isolation"]
     if any(values.get(key, "absent") is None for key in required):
         raise HTTPException(422, "설정값은 null일 수 없습니다.")
     start = values.get("start_time", s.start_time)

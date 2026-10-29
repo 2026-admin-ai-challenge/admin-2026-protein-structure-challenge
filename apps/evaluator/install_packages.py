@@ -13,32 +13,55 @@ it runs later in the inference container, which has no network.
 The requirements were parsed and re-written by the worker (app/packages.py), never passed
 as raw text from the submission. The environment also sees the image's base packages
 (system site-packages), so pip installs only what is missing.
+
+Without Docker (EVALUATOR=sandbox) the same script runs from the scoring environment, a
+virtualenv on the GPU machine made by setup-server.sh. ADMIN_EVAL_WHEELS and
+ADMIN_EVAL_TORCH_INDEX then name its wheels and its CUDA build of torch, and the new
+environment sees the scoring environment's packages through a .pth file instead.
 """
 import os
 import re
 import shutil
+import site
 import subprocess
 import sys
 import venv
 
-WHEELS = "/opt/wheels"
-# CPU builds of torch, torchvision and torchaudio. Their `+cpu` versions sort above the
-# plain PyPI ones, which would pull in gigabytes of CUDA libraries.
-CPU_INDEX = "https://download.pytorch.org/whl/cpu"
+WHEELS = os.getenv("ADMIN_EVAL_WHEELS", "/opt/wheels")
+# Builds of torch, torchvision and torchaudio: CPU ones in the image. Their `+cpu` versions
+# sort above the plain PyPI ones, which would pull in gigabytes of CUDA libraries.
+TORCH_INDEX = os.getenv("ADMIN_EVAL_TORCH_INDEX", "https://download.pytorch.org/whl/cpu")
 # The image holds xgboost-cpu: the same `xgboost` module without the ~300 MB nvidia-nccl
 # GPU dependency. Offline, `xgboost` means that wheel.
 XGBOOST = re.compile(r"^xgboost(?=[\[<>=!~]|$)", re.IGNORECASE)
 
 
+def create(target):
+    if sys.prefix == sys.base_prefix:
+        venv.EnvBuilder(system_site_packages=True, symlinks=True).create(target)
+        return
+    # Run from a virtualenv, whose packages "system site-packages" would not include: they
+    # are added after the new environment's own, which therefore win, as in the image.
+    venv.EnvBuilder(symlinks=True).create(target)
+    version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    with open(os.path.join(target, "lib", version, "site-packages", "admin-eval-base.pth"), "w") as pth:
+        pth.write("\n".join(site.getsitepackages()) + "\n")
+
+
 def main():
     mode, target, requirements = sys.argv[1], sys.argv[2], sys.argv[3:]
     if not os.path.exists(os.path.join(target, "pyvenv.cfg")):
-        venv.EnvBuilder(system_site_packages=True, symlinks=True).create(target)
+        create(target)
     if mode == "offline":
         sources = ["--no-index", "--find-links", WHEELS]
         requirements = [XGBOOST.sub("xgboost-cpu", item) for item in requirements]
     else:
-        sources = ["--find-links", WHEELS, "--extra-index-url", CPU_INDEX]
+        sources = ["--find-links", WHEELS, "--extra-index-url", TORCH_INDEX]
+    # --no-compile: pip would byte-compile every .py file it unpacks, which was most of the time
+    # of a large install (49-57 s down to 13-15 s for the whole lock on the GPU machine). The
+    # inference container cannot write .pyc files, so those packages are compiled in memory at
+    # each import instead: about 3 s more per run for the heaviest set. The base packages are
+    # installed with pip's default and keep their .pyc files.
     # Downloads go next to the environment, on disk: /tmp is a small tmpfs held in memory.
     scratch = os.path.join(os.path.dirname(target), "tmp")
     os.makedirs(scratch, exist_ok=True)
@@ -46,7 +69,7 @@ def main():
         code = subprocess.call([
             f"{target}/bin/python", "-m", "pip", "install", *sources, "--only-binary", ":all:",
             "--disable-pip-version-check", "--no-warn-script-location", "--progress-bar", "off",
-            *requirements,
+            "--no-compile", *requirements,
         ], env={**os.environ, "TMPDIR": scratch})
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

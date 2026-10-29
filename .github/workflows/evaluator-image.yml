@@ -1,0 +1,78 @@
+name: Evaluator image
+# Builds the scoring image (apps/evaluator) and pushes it to ghcr, where the GPU machine
+# pulls it (docker-compose.remote.yml). It holds only base packages and wheels, never
+# labels or evaluation input. Separate from Deploy: the web server never runs this image,
+# and it changes rarely, so it is built only when apps/evaluator changes or on request.
+# A pull request builds and checks it without pushing, so a broken image shows up before merge.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/evaluator/**
+      - .github/workflows/evaluator-image.yml
+  pull_request:
+    paths:
+      - apps/evaluator/**
+      - .github/workflows/evaluator-image.yml
+  workflow_dispatch:
+
+concurrency:
+  group: evaluator-image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/evaluator
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Built into the runner first and checked there: a broken image is never pushed.
+      # The layer cache lives in the registry, not in the Actions cache, whose 10 GB this
+      # multi-GB image would otherwise take from the web images.
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/evaluator
+          platforms: linux/amd64
+          load: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          # Only main writes the shared cache; a pull request only reads it.
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:buildcache,mode=max', env.IMAGE) || '' }}
+      - name: Check the image as the worker will
+        run: |
+          image="$IMAGE:${{ github.sha }}"
+          # The worker refuses an image without this installer label (apps/api/app/evaluators/docker.py).
+          label=$(docker image inspect --format '{{index .Config.Labels "admin-eval.installer"}}' "$image")
+          test "$label" = "1" || { echo "installer label is '$label', expected 1" >&2; exit 1; }
+          # Base packages import without network, as the unprivileged user inference runs as.
+          docker run --rm --network none --read-only --user 65534:65534 --tmpfs /tmp -e HOME=/tmp "$image" \
+            python -c "import numpy, pandas, scipy, sklearn, joblib, torch, transformers, plotly, matplotlib, pyarrow, sqlalchemy, catboost; print('torch', torch.__version__)"
+          test -n "$(docker run --rm --network none "$image" ls /opt/wheels)"
+      - name: Push
+        if: github.event_name != 'pull_request'
+        run: docker push --all-tags "$IMAGE"
+      - name: Summary
+        if: github.event_name != 'pull_request'
+        run: |
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
+          {
+            echo "### Evaluator image"
+            echo "Pin this on the GPU machine (EVAL_IMAGE) so the scoring environment cannot change mid-competition:"
+            echo
+            echo "- tag: \`$IMAGE:${{ github.sha }}\`"
+            echo "- digest: \`$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"

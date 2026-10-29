@@ -24,6 +24,9 @@ def failure(code, message=None, log=None):
 class Evaluator:
     name = "base"
 
+    def configure(self, settings):
+        """Takes the competition settings before each check; `settings` may be None."""
+
     def ready(self):
         """(ok, detail). A worker takes no submissions while its evaluator is not ready."""
         return True, "ready"
