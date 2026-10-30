@@ -101,7 +101,7 @@ def test_pending_and_retryable_server_failure_are_protected(client, db, particip
 def test_teams_are_independent(client, db, participant):
     first = submit(client, public=0.6)
     score_next(db)
-    other = add_account(db, "Other retention team", "retentionother")
+    other = add_account(db, "Other retention team")
     login(client, other)
     second = submit(client, public=0.1)
     score_next(db)

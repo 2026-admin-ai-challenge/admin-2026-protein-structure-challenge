@@ -37,11 +37,11 @@ try:
         with SessionLocal() as db:
             team = Team(name='Retention integration test')
             db.add(team); db.flush()
-            create_user(db, team, username='retentiontest', password='local-retention-test-only')
+            create_user(db, team, password='local-retention-test-only')
             s = db.get(Settings, 1)
             s.is_open = True; s.start_time = now()-timedelta(hours=1); s.end_time = now()+timedelta(hours=1)
             db.commit()
-        assert client.post('/api/auth/login', json={'username':'retentiontest', 'password':'local-retention-test-only'}).status_code == 200
+        assert client.post('/api/auth/login', json={'username':'Retention integration test', 'password':'local-retention-test-only'}).status_code == 200
         ids = []
         for score in [0.4, 0.9]:
             content = io.BytesIO()

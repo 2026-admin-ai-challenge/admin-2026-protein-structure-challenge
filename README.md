@@ -49,20 +49,20 @@ cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\partic
 
 ## 참가자 계정
 
-참가자는 **팀 이름을 아이디로, 사전에 배부한 비밀번호로** 로그인합니다(팀 이름은 대소문자·띄어쓰기 무시). `username`은 계정을 구분하는 내부 ID이며 로그인에는 쓰지 않습니다. 계정 시트 `accounts/participants.csv`(Git 제외)가 수정 가능한 원본입니다.
+참가자는 **팀 이름과 사전에 배부한 비밀번호로** 로그인합니다(팀 이름은 대소문자·띄어쓰기 무시). 팀마다 계정이 하나이고 따로 아이디는 없습니다. 계정 시트 `accounts/participants.csv`(Git 제외)가 수정 가능한 원본이며 한 팀을 한 줄로 적습니다.
 
 ```csv
-team_name,username,password,display_name
-Team 01,k7m2xq9rtd,임시비밀번호,Team 01
+team_name,password
+Team 01,임시비밀번호
 ```
 
-- 새로 만들기: api 컨테이너 안에서 만든 뒤 꺼내고, 컨테이너 사본은 지웁니다(랜덤 10자리 아이디, 12자리 임시 비밀번호). `docker compose cp`는 같은 이름의 시트를 덮어쓰므로 기존 시트가 있으면 먼저 옮겨 둡니다.
+- 새로 만들기: api 컨테이너 안에서 만든 뒤 꺼내고, 컨테이너 사본은 지웁니다(팀마다 12자리 임시 비밀번호). `docker compose cp`는 같은 이름의 시트를 덮어쓰므로 기존 시트가 있으면 먼저 옮겨 둡니다.
   ```bash
   docker compose exec api python -m app.generate_accounts --count 10 --out /tmp/participants.csv
   docker compose cp api:/tmp/participants.csv accounts/participants.csv
   docker compose exec api rm /tmp/participants.csv
   ```
-- 수정 반영: 시트를 고친 뒤 `sync_accounts`를 다시 실행합니다. 팀 이름·비밀번호 변경, 계정 추가가 반영됩니다.
+- 수정 반영: 시트를 고친 뒤 `sync_accounts`를 다시 실행합니다. 새 팀 추가와 비밀번호 변경이 반영됩니다. 시트에서 팀 이름을 바꾸면(대소문자·띄어쓰기 말고) 새 팀으로 만들어지므로, 팀 이름 변경은 관리자 화면의 **이름 변경**으로 합니다. 예전 시트의 `username`·`display_name` 열은 무시합니다.
 - 시트에 없는 참가자 계정까지 막으려면 `--exclusive`를 붙입니다.
 - DB에는 비밀번호 해시만 저장됩니다. 관리자 화면에서도 팀·계정 발급, 비밀번호 재설정, 차단, 팀 삭제를 할 수 있습니다.
 
@@ -98,7 +98,7 @@ docker compose exec api python -m app.create_admin
 
 ### 4. 자주 하는 일
 
-- **계정 발급**: 팀·계정에서 팀을 만들고 **계정 발급**을 누릅니다. 팀 이름(아이디)과 임시 비밀번호는 **그때 한 번만** 표시되니 닫기 전에 전달합니다.
+- **계정 발급**: 팀·계정에서 팀을 만들고 **계정 발급**을 누릅니다. 팀당 계정은 하나입니다. 팀 이름과 임시 비밀번호는 **그때 한 번만** 표시되니 닫기 전에 전달합니다.
 - **팀 삭제**: **팀 삭제**를 누르고 팀 이름을 입력합니다(대소문자·띄어쓰기 무시). 계정·제출·보관 ZIP·순위 항목이 영구 삭제됩니다(조작 기록은 남음). 계정 시트에서도 그 팀을 지웁니다.
 - **비밀번호를 잊은 팀**: **비밀번호 재설정**을 누르고 새 임시 비밀번호를 전달합니다. 기존 로그인은 즉시 풀립니다.
 - **실패 문의**: 제출·대기열에서 접수 ID로 검색하고 **로그**를 봅니다. 로그에는 평가 입력이 섞일 수 있으니 참가자에게 그대로 주지 않습니다.

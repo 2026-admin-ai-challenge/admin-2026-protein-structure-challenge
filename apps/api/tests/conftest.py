@@ -111,23 +111,22 @@ def client(db):
     app.dependency_overrides.clear()
 
 
-def add_account(db, team_name, username, password=None):
-    # Accounts of one team sign in with the same team name, so each gets its own password.
-    password = password or f"Temp-{username}-42"
+def add_account(db, team_name, password=None):
+    # The site gives a team one account. Tests may add a second, as teams got before that
+    # rule; accounts of one team sign in with the same team name and their own password.
     team = db.query(Team).filter_by(name=team_name).first()
     if not team:
         team = Team(name=team_name)
         db.add(team)
         db.flush()
-    user, _ = create_user(db, team, username, password=password)
+    user, password = create_user(db, team, password=password)
     db.commit()
-    return {"id": user.id, "username": username, "password": password, "team_id": team.id, "team_name": team_name}
+    return {"id": user.id, "password": password, "team_id": team.id, "team_name": team_name}
 
 
 def login(client, account):
-    """Participants sign in with their team name; pass `username` to sign in as an organizer."""
-    name = account.get("team_name") or account["username"]
-    response = client.post("/api/auth/login", json={"username": name, "password": account["password"]})
+    """Participants sign in with their team name."""
+    response = client.post("/api/auth/login", json={"username": account["team_name"], "password": account["password"]})
     assert response.status_code == 200, response.text
     return client.cookies.get("admin_session")
 
@@ -135,7 +134,7 @@ def login(client, account):
 @pytest.fixture
 def participant(client, db):
     """An organizer-issued team account, already logged in on `client`."""
-    account = add_account(db, "Protein Learners", "teamlearner")
+    account = add_account(db, "Protein Learners")
     login(client, account)
     return account
 

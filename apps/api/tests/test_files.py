@@ -35,8 +35,8 @@ def test_upload_writes_a_file_record_sharing_team_and_submission(client, db, par
 def test_team_storage_usage_and_listing(client, db, participant, organizer):
     first = make_zip()
     upload(client, first)
-    mate = add_account(db, participant["team_name"], "teammate")
-    other = add_account(db, "Other team", "otherteam")
+    mate = add_account(db, participant["team_name"])
+    other = add_account(db, "Other team")
     login(client, mate)
     second = make_zip(extra={"model/extra.bin": b"x" * 500})
     upload(client, second)
@@ -49,7 +49,7 @@ def test_team_storage_usage_and_listing(client, db, participant, organizer):
     assert len(listing["files"]) == 3 and listing["total_bytes"] == 2 * len(first) + len(second)
     usage = {team["team"]: (team["files"], team["storage_bytes"]) for team in listing["teams"]}
     assert usage == {"Protein Learners": (2, len(first) + len(second)), "Other team": (1, len(first))}
-    assert {f["uploaded_by"] for f in listing["files"]} == {"teamlearner", "teammate", "otherteam"}
+    assert {f["uploaded_by"] for f in listing["files"]} == {None}  # team accounts have no ID
     only = client.get(f"/api/admin/files?team_id={other['team_id']}").json()["files"]
     assert [f["team"] for f in only] == ["Other team"]
     teams = {team["name"]: team for team in client.get("/api/admin/teams").json()}
@@ -161,7 +161,7 @@ def test_verify_finds_missing_changed_and_orphan_files(client, db, participant, 
 
 def test_admin_deletes_a_team_with_everything_it_owns(client, db, participant, organizer):
     scored = upload(client, mock_zip(public=0.9, private=0.9)).json()
-    other = add_account(db, "Other team", "otherteam")
+    other = add_account(db, "Other team")
     login(client, other)
     kept = upload(client, mock_zip(public=0.5, private=0.5)).json()
     process_one(db, MOCK, "worker-a")
@@ -194,7 +194,7 @@ def test_admin_deletes_a_team_with_everything_it_owns(client, db, participant, o
     assert deleted.status_code == 200, deleted.text
     body = deleted.json()
     assert (body["name"], body["accounts"], body["submissions"], body["files"], body["not_deleted"]) == (
-        "Protein Learners", ["teamlearner"], 2, 2, [])
+        "Protein Learners", 1, 2, 2, [])
     db.expire_all()
     assert db.get(Team, team_id) is None and db.get(User, participant["id"]) is None
     assert db.scalars(select(Submission.id)).all() == [kept["id"]]
@@ -204,7 +204,7 @@ def test_admin_deletes_a_team_with_everything_it_owns(client, db, participant, o
     assert [entry["team"] for entry in client.get("/api/leaderboard").json()["entries"]] == ["Other team"]
     assert "Protein Learners" not in [team["name"] for team in client.get("/api/admin/teams").json()]
     log = db.scalar(select(AuditLog).where(AuditLog.action == "team.delete"))
-    assert log.actor == "organizer" and log.target == f"team:{team_id}" and "teamlearner" in log.detail
+    assert log.actor == "organizer" and log.target == f"team:{team_id}" and '"accounts": 1' in log.detail
     assert client.post(f"/api/admin/teams/{team_id}/delete", json={"confirm": "Protein Learners"}).status_code == 404
     # The team's session and sign-in are gone (signed out, not "blocked"); the name can be used again.
     client.cookies.set("admin_session", session)
