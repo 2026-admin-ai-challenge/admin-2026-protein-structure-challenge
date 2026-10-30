@@ -31,14 +31,14 @@ export function useAdminData<T>(path: string) {
     reload();
   }, [path, reload]);
   const run = useCallback(
-    async <R,>(action: () => Promise<R>, done?: string) => {
+    async <R,>(action: () => Promise<R>, done?: string | ((result: R) => string)) => {
       setBusy(true);
       setError("");
       setNotice("");
       try {
         const result = await action();
         await reload();
-        if (done) setNotice(done);
+        if (done) setNotice(typeof done === "function" ? done(result) : done);
         return result;
       } catch (e) {
         setError((e as Error).message);

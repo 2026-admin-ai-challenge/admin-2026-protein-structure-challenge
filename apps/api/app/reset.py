@@ -18,10 +18,14 @@ CONFIRM_PHRASE = "초기화"
 TABLES = [LeaderboardEntry, SubmissionFile, Submission, SpecialAward, AuditLog, Worker, RateBucket]
 
 
-def scoring_now(db):
-    """Running submissions whose worker is still reporting. Abandoned ones may be cleared."""
+def scoring_now(db, team_id=None):
+    """Running submissions (of one team, if given) whose worker is still reporting.
+    Abandoned ones may be cleared."""
     cutoff = now() - timedelta(seconds=WORKER_STALE_SECONDS)
-    return db.scalar(select(func.count(Submission.id)).where(Submission.status == "running", Submission.heartbeat_at >= cutoff))
+    query = select(func.count(Submission.id)).where(Submission.status == "running", Submission.heartbeat_at >= cutoff)
+    if team_id is not None:
+        query = query.where(Submission.team_id == team_id)
+    return db.scalar(query)
 
 
 def clear(db, settings):

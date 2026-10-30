@@ -56,7 +56,7 @@ export default function AdminLogin({ onClose }: { onClose: () => void }) {
         <p>대회 시작 전에는 관리자 계정으로 로그인한 운영진만 사이트를 볼 수 있습니다.</p>
         <form onSubmit={submit}>
           <label>
-            아이디
+            아이디 또는 운영진 팀 이름
             <input
               autoFocus
               name="username"

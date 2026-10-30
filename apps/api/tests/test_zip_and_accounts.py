@@ -147,8 +147,21 @@ def test_account_sheet_is_the_editable_source_of_truth(db):
     assert log and all("Pass" not in (entry.detail or "") for entry in log)
 
 
+def test_sheet_team_names_match_like_sign_in(db):
+    sync_sheet(db, "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\n")
+    team_id = db.scalar(select(User.team_id).where(User.username == "abcdefgh23"))
+    # A second account spelled with other case or spacing joins the same team, whose
+    # sign-in name takes the sheet's spelling.
+    summary = sync_sheet(db, "team_name,username,password\nTEAM  01,zyxwvuts45,Second-Pass-123\n")
+    assert (summary["created"], summary["renamed_teams"]) == (1, 1)
+    assert db.scalar(select(User.team_id).where(User.username == "zyxwvuts45")) == team_id
+    assert [team.name for team in db.scalars(select(Team))] == ["TEAM  01"]
+
+
 @pytest.mark.parametrize("sheet", [
     "username,password\nabcdefgh23,First-Pass-123\n",
+    # One team spelled two ways would make its sign-in name flip on every sync.
+    "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\nteam 01,zyxwvuts45,Other-Pass-123\n",
     "team_name,username,password\nTeam 01,ab,First-Pass-123\n",
     "team_name,username,password\nTeam 01,abcdefgh23,short\n",
     "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\nTeam 02,abcdefgh23,Other-Pass-123\n",

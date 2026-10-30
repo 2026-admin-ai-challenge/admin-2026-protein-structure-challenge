@@ -6,6 +6,7 @@ r"""Loads the organizer account sheet into the database.
 
 The sheet (team_name, username, password, display_name) is the editable source of truth
 for participant logins: edit a row and run this again. Only password hashes are stored.
+Participants sign in with team_name and password; username is the account's internal ID.
 `--exclusive` blocks every participant account that is not in the sheet.
 """
 import argparse

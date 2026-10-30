@@ -119,7 +119,19 @@ export type Account = {
   banned: boolean;
   created_at: string;
 };
-export type IssuedAccount = Account & { temporary_password: string };
+export type IssuedAccount = Account & {
+  team_id: number;
+  team_name: string;
+  temporary_password: string;
+};
+// What POST /admin/teams/{id}/delete removed. not_deleted: ZIPs left on disk, with the reason.
+export type DeletedTeam = {
+  name: string;
+  accounts: string[];
+  submissions: number;
+  files: number;
+  not_deleted: string[];
+};
 export type AdminTeam = {
   id: number;
   name: string;

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { send } from "../../lib/api";
 import { fileSize } from "../../format";
-import type { AdminTeam, IssuedAccount } from "../../types";
+import type { AdminTeam, DeletedTeam, IssuedAccount } from "../../types";
 import Feedback from "./Feedback";
 import { useAdminData } from "./useAdmin";
 
@@ -23,12 +23,37 @@ export default function AccountsSection({
   useEffect(() => {
     if (issued) box.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [issued]);
-  // No username is sent, so the server picks a random 10-character ID.
+  // No username is sent, so the server picks the account's internal ID. The team signs
+  // in with its name; accounts of one team are told apart by password.
   const issue = (teamId: number) =>
     run(async () => {
       setIssued(await send<IssuedAccount>("/admin/users", { team_id: teamId }));
       onChanged();
     });
+  // The organizer types the team name, which the server checks too.
+  const remove = (team: AdminTeam) => {
+    const typed = prompt(
+      `팀 "${team.name}"을 영구 삭제합니다. 계정 ${team.users.length}개, 제출 ${team.submissions}건, ` +
+        `보관 중인 ZIP ${team.files}개와 순위 기록이 함께 지워지며 되돌릴 수 없습니다.\n` +
+        "계정 시트(accounts/participants.csv)에 남아 있으면 다음 sync_accounts 때 다시 만들어지니 시트에서도 지우세요.\n\n" +
+        "확인을 위해 팀 이름을 입력하세요(대소문자·띄어쓰기 구분 없음).",
+    );
+    if (!typed?.trim()) return;
+    run(
+      async () => {
+        const deleted = await send<DeletedTeam>(`/admin/teams/${team.id}/delete`, {
+          confirm: typed,
+        });
+        if (issued?.team_id === team.id) setIssued(null);
+        onChanged();
+        return deleted;
+      },
+      (deleted) =>
+        deleted.not_deleted.length
+          ? `팀 "${deleted.name}"을 삭제했습니다. ZIP ${deleted.not_deleted.length}개는 디스크에서 지우지 못했습니다. 제출·대기열의 파일 정합성 검사로 확인하세요.`
+          : `팀 "${deleted.name}"과 계정 ${deleted.accounts.length}개, 제출 ${deleted.submissions}건을 삭제했습니다.`,
+    );
+  };
   return (
     <>
       <Feedback error={error} notice={notice} loading={loading} />
@@ -47,8 +72,8 @@ export default function AccountsSection({
             재설정으로 새 비밀번호를 발급합니다.
           </p>
           <dl>
-            <dt>아이디</dt>
-            <dd>{issued.username}</dd>
+            <dt>아이디 (팀 이름)</dt>
+            <dd>{issued.team_name}</dd>
             <dt>임시 비밀번호</dt>
             <dd>{issued.temporary_password}</dd>
           </dl>
@@ -56,7 +81,7 @@ export default function AccountsSection({
             className="btn secondary compact"
             onClick={() =>
               navigator.clipboard?.writeText(
-                `아이디: ${issued.username}\n비밀번호: ${issued.temporary_password}`,
+                `아이디(팀 이름): ${issued.team_name}\n비밀번호: ${issued.temporary_password}`,
               )
             }
           >
@@ -106,16 +131,39 @@ export default function AccountsSection({
                     className="text-link"
                     disabled={busy}
                     onClick={() => {
-                      const name = prompt("새 팀 이름", team.name)?.trim();
+                      const name = prompt(
+                        "새 팀 이름 (참가자가 로그인할 때 쓰는 이름도 바뀝니다)",
+                        team.name,
+                      )?.trim();
                       if (name && name !== team.name)
                         run(async () => {
-                          await send("/admin/teams/" + team.id, { name }, "PATCH");
+                          const renamed = await send<{ name: string }>(
+                            "/admin/teams/" + team.id,
+                            { name },
+                            "PATCH",
+                          );
+                          // An open password box shows the sign-in name; keep it current.
+                          setIssued((open) =>
+                            open?.team_id === team.id
+                              ? { ...open, team_name: renamed.name }
+                              : open,
+                          );
                           onChanged();
-                        }, "팀 이름을 바꿨습니다.");
+                        }, "팀 이름을 바꿨습니다. 이제 새 이름으로 로그인합니다.");
                     }}
                   >
                     이름 변경
                   </button>
+                  {!team.users.some((u) => u.role === "ADMIN") && (
+                    <button
+                      className="text-link danger"
+                      disabled={busy || finalized}
+                      title={finalized ? "최종 순위 공개 후에는 삭제할 수 없습니다." : undefined}
+                      onClick={() => remove(team)}
+                    >
+                      팀 삭제
+                    </button>
+                  )}
                 </td>
                 <td>
                   {team.users.map((u) => (
@@ -187,7 +235,7 @@ export default function AccountsSection({
                     disabled={busy}
                     onClick={() => issue(team.id)}
                   >
-                    랜덤 아이디로 발급
+                    {team.users.length ? "계정 추가 발급" : "계정 발급"}
                   </button>
                 </td>
               </tr>
@@ -202,9 +250,11 @@ export default function AccountsSection({
         )}
       </div>
       <p className="muted">
-        여러 계정을 한꺼번에 만들거나 고칠 때는 서버의 accounts/participants.csv를
-        수정한 뒤 sync_accounts 명령을 실행하세요. 비밀번호는 해시로만
-        저장됩니다.
+        모든 계정은 팀 이름을 아이디로, 배부된 비밀번호로 로그인합니다(대소문자·띄어쓰기
+        구분 없음). 운영진은 관리자 아이디로도 로그인할 수 있습니다. 계정 옆의 코드는 내부 구분용이며 로그인에는 쓰지 않습니다. 한
+        팀에 계정이 여럿이면 비밀번호로 구분합니다. 여러 계정을 한꺼번에 만들거나
+        고칠 때는 서버의 accounts/participants.csv를 수정한 뒤 sync_accounts 명령을
+        실행하세요. 비밀번호는 해시로만 저장됩니다.
       </p>
     </>
   );

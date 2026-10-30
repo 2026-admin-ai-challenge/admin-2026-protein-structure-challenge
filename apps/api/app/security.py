@@ -44,7 +44,9 @@ def current_user(request: Request, db=Depends(get_db)):
         user = db.get(User, int(claims["sub"]))
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(401, "로그인이 필요합니다.")
-    if not user or user.banned:
+    if not user:  # the account or its team was deleted
+        raise HTTPException(401, "로그인이 필요합니다.")
+    if user.banned:
         raise ApiError(403, "banned", "계정에 접근할 수 없습니다.")
     if claims.get("pv") != fingerprint(user.password_hash):
         raise HTTPException(401, "비밀번호가 변경되었습니다. 다시 로그인하세요.")

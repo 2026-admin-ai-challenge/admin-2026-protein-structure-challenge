@@ -1,5 +1,6 @@
 import hashlib
 import json
+import unicodedata
 from datetime import timedelta
 
 import pytest
@@ -13,19 +14,48 @@ PARTICIPANT_PATHS = ["/api/competition", "/api/submissions/me", "/api/leaderboar
 HIDDEN_FIELDS = ["private_score", "partition", "predictions", "log_tail", "domain_id", "homologous_superfamily"]
 
 
-def test_registration_is_gone_and_login_uses_issued_id(client, db, participant):
+def sign_in(client, name, password):
+    return client.post("/api/auth/login", json={"username": name, "password": password})
+
+
+def test_registration_is_gone_and_teams_sign_in_with_their_name(client, db, participant):
     assert client.post("/api/auth/register", json={"username": "new", "password": "VeryStrongPassword123"}).status_code in {404, 405}
     stored = db.get(User, participant["id"])
     assert stored.password_hash.startswith("$argon2")
     me = client.get("/api/auth/me").json()
-    assert me["username"] == "teamlearner" and "password" not in json.dumps(me)
+    assert me["team_name"] == "Protein Learners" and "password" not in json.dumps(me)
     assert client.get("/api/admin/teams").status_code == 403
     client.post("/api/auth/logout")
     assert client.get("/api/auth/me").status_code == 401
-    assert client.post("/api/auth/login", json={"username": "teamlearner", "password": "WrongPassword123"}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "nobody", "password": participant["password"]}).status_code == 401
-    # IDs are case-insensitive so a typed capital letter does not lock a team out.
-    assert client.post("/api/auth/login", json={"username": " TeamLearner ", "password": participant["password"]}).status_code == 200
+    password = participant["password"]
+    assert sign_in(client, "Protein Learners", "WrongPassword123").status_code == 401
+    assert sign_in(client, "Other team", password).status_code == 401
+    # The account's internal ID is not a sign-in name.
+    assert sign_in(client, "teamlearner", password).status_code == 401
+    # Case and spacing do not matter, so a typed capital letter does not lock a team out.
+    signed_in = sign_in(client, "  protein   LEARNERS ", password)
+    assert signed_in.status_code == 200 and signed_in.json()["id"] == participant["id"]
+
+
+def test_accounts_of_one_team_are_told_apart_by_password(client, db, participant, organizer):
+    mate = add_account(db, participant["team_name"], "teammate")
+    korean = add_account(db, "단백질 연구팀", "koreanteam")
+    assert sign_in(client, "Protein Learners", mate["password"]).json()["id"] == mate["id"]
+    assert sign_in(client, "Protein Learners", participant["password"]).json()["id"] == participant["id"]
+    assert sign_in(client, "단백질  연구팀", korean["password"]).json()["id"] == korean["id"]
+    assert sign_in(client, "단백질연구팀", korean["password"]).json()["id"] == korean["id"]
+    decomposed = unicodedata.normalize("NFD", "단백질 연구팀")  # as pasted from a macOS file name
+    assert sign_in(client, decomposed, korean["password"]).json()["id"] == korean["id"]
+    assert sign_in(client, "단백질 연구팀", mate["password"]).status_code == 401  # another team's password
+    client.cookies.set("admin_session", organizer)
+    assert client.patch(f"/api/admin/users/{mate['id']}", json={"banned": True}).status_code == 200
+    client.cookies.clear()
+    assert sign_in(client, "Protein Learners", mate["password"]).status_code == 401
+    assert sign_in(client, "Protein Learners", participant["password"]).status_code == 200
+    # Organizers sign in with their team's name like everyone else, or with their own ID.
+    assert sign_in(client, "organizers", "longpassword123").json()["role"] == "ADMIN"
+    assert sign_in(client, "Organizers", participant["password"]).status_code == 401
+    assert sign_in(client, " Organizer ", "longpassword123").json()["role"] == "ADMIN"
 
 
 def test_one_team_id_can_be_signed_in_on_several_devices(client, db, participant):
@@ -43,9 +73,16 @@ def test_admin_issues_resets_and_blocks_accounts(client, db, organizer):
     client.cookies.set("admin_session", organizer)
     team = client.post("/api/admin/teams", json={"name": "Folders"})
     assert team.status_code == 201
-    assert client.post("/api/admin/teams", json={"name": "Folders"}).status_code == 409
+    # Team names are sign-in names: no copy that differs only in case or spacing, no organizer ID.
+    for name in ["Folders", " folders ", "FOLDERS", "Organizer"]:
+        assert client.post("/api/admin/teams", json={"name": name}).status_code == 409, name
+    other = client.post("/api/admin/teams", json={"name": "Other Folders"}).json()
+    assert client.patch(f"/api/admin/teams/{other['id']}", json={"name": "folders"}).status_code == 409
+    assert client.patch(f"/api/admin/teams/{team.json()['id']}", json={"name": "FOLDERS"}).status_code == 200
+    assert client.patch(f"/api/admin/teams/{team.json()['id']}", json={"name": "Folders"}).status_code == 200
     issued = client.post("/api/admin/users", json={"team_id": team.json()["id"]}).json()
     assert len(issued["username"]) == 10 and len(issued["temporary_password"]) >= 12
+    assert issued["team_name"] == "Folders"
     second = client.post("/api/admin/users", json={"team_id": team.json()["id"], "username": "folders-2"}).json()
     assert second["team_name"] == "Folders"
     assert client.post("/api/admin/users", json={"team_id": team.json()["id"], "username": "folders-2"}).status_code == 409
@@ -54,20 +91,21 @@ def test_admin_issues_resets_and_blocks_accounts(client, db, organizer):
     assert "temporary_password" not in json.dumps(listed) and "password_hash" not in json.dumps(listed)
 
     client.cookies.clear()
-    old_session = login(client, {"username": issued["username"], "password": issued["temporary_password"]})
+    old_session = login(client, {"team_name": "Folders", "password": issued["temporary_password"]})
+    assert sign_in(client, "folders", second["temporary_password"]).json()["username"] == "folders-2"
     client.cookies.set("admin_session", organizer)
     reset = client.post(f"/api/admin/users/{issued['id']}/reset-password").json()
-    assert reset["temporary_password"] != issued["temporary_password"]
+    assert reset["temporary_password"] != issued["temporary_password"] and reset["team_name"] == "Folders"
     client.cookies.set("admin_session", old_session)
     assert client.get("/api/auth/me").status_code == 401  # a reset signs the account out
     client.cookies.clear()
-    assert client.post("/api/auth/login", json={"username": issued["username"], "password": issued["temporary_password"]}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": issued["username"], "password": reset["temporary_password"]}).status_code == 200
+    assert sign_in(client, "Folders", issued["temporary_password"]).status_code == 401
+    assert sign_in(client, "Folders", reset["temporary_password"]).status_code == 200
 
     client.cookies.set("admin_session", organizer)
     assert client.patch(f"/api/admin/users/{issued['id']}", json={"banned": True}).status_code == 200
     client.cookies.clear()
-    assert client.post("/api/auth/login", json={"username": issued["username"], "password": reset["temporary_password"]}).status_code == 401
+    assert sign_in(client, "Folders", reset["temporary_password"]).status_code == 401
 
     client.cookies.set("admin_session", organizer)
     log = client.get("/api/admin/audit").json()
@@ -192,6 +230,20 @@ def test_csrf_and_login_rate_limit(client, monkeypatch):
         assert client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"}).status_code == 401
     refused = client.post("/api/auth/login", json={"username": "nobody", "password": "NotCorrect123"})
     assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+
+
+def test_a_team_cannot_be_locked_out_by_someone_elses_wrong_passwords(client, participant, monkeypatch):
+    """Team names are public, so wrong passwords must not shut the team itself out."""
+    stop_the_clock(monkeypatch)
+    name = participant["team_name"]
+    for _ in range(10):
+        assert client.post("/api/auth/login", json={"username": name, "password": "NotCorrect123"}).status_code == 401
+    # Guessing is still cut off for that team.
+    refused = client.post("/api/auth/login", json={"username": name, "password": "NotCorrect123"})
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+    # The team itself still signs in: the right password never spends the bucket.
+    allowed = client.post("/api/auth/login", json={"username": name, "password": participant["password"]})
+    assert allowed.status_code == 200 and allowed.json()["team_name"] == name
 
 
 def test_organizer_login_is_never_rate_limited(client, organizer, monkeypatch):
