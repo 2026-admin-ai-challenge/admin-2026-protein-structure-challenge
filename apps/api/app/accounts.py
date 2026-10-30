@@ -182,7 +182,11 @@ def sync_sheet(db, text, exclusive=False, actor="cli"):
         if user.banned:
             user.banned = False
             changed = True
-        if not verify(password, user.password_hash):
+        if user.password_changed_at:
+            # The team chose its own password, which the sheet does not know. Counted only
+            # when it happens, so the summary reads as before for organizers who never see it.
+            summary["team_passwords_kept"] = summary.get("team_passwords_kept", 0) + 1
+        elif not verify(password, user.password_hash):
             user.password_hash = hasher.hash(password)
             changed = True
         summary["updated" if changed else "unchanged"] += 1

@@ -231,6 +231,7 @@ def reset_password(id: int, admin=Depends(admin_user), db=Depends(get_db)):
     if user.role == "ADMIN":
         raise HTTPException(400, "관리자 비밀번호는 서버에서 create_admin 명령으로 재설정합니다.")
     password = random_password()
+    user.password_changed_at = None  # an issued password again, so the account sheet manages it
     user.password_hash = hasher.hash(password)  # also signs the account out everywhere
     team = db.get(Team, user.team_id)
     record(db, admin, "user.reset_password", f"user:{user.id}", {"team": team.name})
