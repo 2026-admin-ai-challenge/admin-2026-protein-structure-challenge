@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from app.awards import scaled
 from app.leaderboard import rebuild
-from app.models import AuditLog, SpecialAward, Team
+from app.models import AuditLog, SpecialAward, Team, User
 from conftest import add_account
 from test_worker import scored
 
@@ -63,6 +63,24 @@ def test_climb_counts_from_the_rank_when_the_first_score_came_in(client, db, org
     assert [(r["team"], r["rank_then"], r["rank"], r["value"]) for r in final] == [
         ("Middle", 1, 1, 0), ("Late", 2, 2, 0), ("Early", 1, 3, -2)]
     assert final[1]["score_then"] == 0.3 and final[1]["score"] == 0.4
+
+
+def test_organizers_test_models_never_take_part(client, db, organizer):
+    admin = db.scalar(select(User).where(User.role == "ADMIN"))
+    first = add_account(db, "First", "firstteam")
+    second = add_account(db, "Second", "secondteam")
+    # The best score and the smallest ZIP: it would win both awards if it took part.
+    scored(db, {"id": admin.id, "team_id": admin.team_id}, 0.99, 0.99, seconds=30, zip_bytes=10)
+    scored(db, first, 0.8, 0.8, seconds=0, zip_bytes=1000)
+    scored(db, second, 0.5, 0.5, seconds=10, zip_bytes=500)
+    rebuild(db)
+    db.commit()
+    client.cookies.set("admin_session", organizer)
+
+    tables = board(client)
+    for kind in ("efficiency", "climb"):
+        assert [(r["team"], r["rank"]) for r in tables[kind]] == [("First", 1), ("Second", 2)], kind
+    assert [r["rank_then"] for r in tables["climb"]] == [1, 2]
 
 
 def test_recording_a_winner_keeps_the_numbers_it_was_decided_on(client, db, participant, organizer):
