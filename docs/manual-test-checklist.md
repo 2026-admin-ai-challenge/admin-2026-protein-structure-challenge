@@ -98,6 +98,38 @@
 - [ ] ★ 컴퓨터를 재부팅한 뒤 사이트와 대기열이 그대로 살아난다
 - [ ] ★ 컴퓨터가 절전에 들어가면 접속이 끊기는지 확인하고, 절전을 꺼 둔다
 
+## 9. 원격 GPU 채점 실전 검증 (대회 전 1회, **아직 안 했음**)
+
+채점기는 점검을 통과한 상태지만, 업로드부터 점수까지 **실제로 통과한 제출이 한 건도 없습니다**. 아래를 한 번 해 봐야 대회를 열 수 있습니다.
+
+확인된 것(2026-10-30 15:22 UTC, 운영 서버):
+
+| 항목 | 상태 |
+| --- | --- |
+| 배포 | `2906374`(#39)까지 성공, api·web·worker 정상 |
+| 평가기 | `/api/health`의 `evaluator`가 `sandbox`, `dataset_ready` 참 |
+| 채점 작업자 | 슬롯 5개 기동, 최근 로그에 `not ready` 0건 (GPU 서버 점검 통과) |
+| 설정 | `WORKER_SLOTS=5`, `EVAL_GPU_PICK=free`, `EVAL_GPUS=all`, `EVAL_SANDBOX_LIMITS=none` |
+
+준비물: **실제로 학습된 모델 ZIP**(원격 GPU 검증에 쓴 `testmodel.zip` 등). `var/demo/code.zip`은 가짜 데이터용이라 평가 ID가 맞지 않아 `output_invalid`로 끝납니다. 그래도 업로드·설치·추론·결과 회수까지는 지나가므로, 실제 모델이 없으면 그 범위까지만 확인합니다.
+
+올릴 계정: **운영진 계정**. 운영진 제출은 채점은 되지만 Public·최종 순위와 특별상 계산에서 빠지므로 대회 데이터를 더럽히지 않습니다.
+
+- [ ] 관리자 화면 "현황·설정"에서 채점 작업자가 **준비됨**이고, **채점 격리**가 켜짐인지 확인한다(꺼져 있으면 제출 코드가 GPU 서버에서 네트워크와 파일에 접근할 수 있고, `EVAL_SANDBOX_LIMITS=none`이라 메모리 제한도 없다)
+- [ ] ★ 운영진 계정으로 모델 ZIP을 업로드하고 접수 ID를 적는다
+- [ ] 대기열에서 `running`으로 바뀌고, 서버 로그에 그 제출의 `ran on GPU N`이 남는다
+      ```bash
+      docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.remote.yml logs -f worker
+      ```
+- [ ] `succeeded`로 끝나고 Public 점수와 채점 시간이 화면에 보인다
+- [ ] 실패했으면 분류가 맞는지 본다 — `install_failed`(패키지), `runtime_error`(추론 코드), `output_invalid`(예측 파일), `timeout`, `out_of_memory`는 **팀 책임이라 횟수를 차감**하고, `system_error`만 서버 책임으로 차감하지 않는다
+- [ ] ★ 두 건을 동시에 올려 서로 **다른 GPU에 배정**되는지 로그의 `ran on GPU`로 확인한다(슬롯 5개·`EVAL_GPU_PICK=free`를 처음 실전에서 쓰는 것이므로)
+- [ ] ★ 채점 중에 `docker compose ... restart worker`를 해도 그 제출이 `queued`로 돌아가 다시 채점된다(120초 뒤)
+- [ ] 끝난 뒤 그 운영진 제출이 리더보드와 관리자 특별상 계산표에 **없는지** 확인한다
+- [ ] 결과(접수 ID, 소요 시간, GPU 번호, 성공/실패)를 아래 테스트 기록 표에 남긴다
+
+막히면 `docs/deployment.md`의 "원격 GPU 채점 (SSH)" 절과 관리자 화면의 채점기 사유 메시지를 함께 봅니다.
+
 ## 문제를 발견했을 때
 
 아래를 함께 적어 주면 로그에서 바로 찾을 수 있습니다.
