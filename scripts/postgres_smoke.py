@@ -91,13 +91,15 @@ try:
         history=client.get('/api/submissions/me').json()
         assert len(history['entries'])==1 and history['used']==1 and history['entries'][0]['public_score'] is not None
         board=client.get('/api/leaderboard').json()['entries']
-        assert [e['team'] for e in board]==['Integration Test Team'],board  # the prototype CSV score is not ranked
+        # Teams without a score sit after the ranking with rank None, so rank tells the two apart.
+        assert [e['team'] for e in board if e['rank']]==['Integration Test Team'],board  # the prototype CSV score is not ranked
+        assert all(e['score'] is None and e['submissions']==0 for e in board if e['rank'] is None),board
         assert client.get('/api/leaderboard?board=final').status_code==403
         client.cookies.set('admin_session',organizer_cookie)
         assert client.get('/api/admin/overview').json()['queue']=={'queued':0,'running':0,'succeeded':2,'failed':1}
         assert client.patch('/api/admin/competition',json={'is_open':False}).status_code==200
         assert client.post('/api/admin/leaderboard/finalize').status_code==200
-        assert len(client.get('/api/leaderboard?board=final').json()['entries'])==1
+        assert len([e for e in client.get('/api/leaderboard?board=final').json()['entries'] if e['rank']])==1
         assert client.patch('/api/admin/competition',json={'is_open':True}).status_code==409
         assert {'team.create','user.create','settings.update','leaderboard.finalize'}<={e['action'] for e in client.get('/api/admin/audit').json()}
         assert client.get('/openapi.json').status_code==200
