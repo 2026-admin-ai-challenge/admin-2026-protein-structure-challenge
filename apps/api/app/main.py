@@ -7,7 +7,7 @@ from .config import APP_ORIGIN, MAX_JSON_BYTES, MAX_ZIP_BYTES
 from .db import SessionLocal
 from .errors import ApiError
 from .models import Competition, Settings
-from .routers import admin, auth, public, submissions
+from .routers import admin, auth, awards, public, submissions
 
 
 @asynccontextmanager
@@ -53,5 +53,5 @@ async def protection(request, call_next):
     return response
 
 
-for module in (auth, public, submissions, admin):
+for module in (auth, public, submissions, admin, awards):
     app.include_router(module.router)
