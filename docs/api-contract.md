@@ -128,6 +128,8 @@
  "used": 4, "limit": 20, "remaining": 16}
 ```
 
+`queue_position`은 대기 중(`queued`)인 제출에만 있습니다. 1이면 다음에 채점이 시작됩니다. 여러 제출을 동시에 채점할 수 있어(`WORKER_SLOTS`) 채점 중인 제출은 순서 없이 `null`입니다.
+
 `GET /submissions/me`: 로그인한 계정의 **팀 전체** 제출과 남은 횟수.
 
 ```json

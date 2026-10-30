@@ -59,6 +59,9 @@ MAX_JSON_BYTES = 64 * 1024
 
 # A running submission whose worker stopped reporting for this long counts as abandoned.
 WORKER_STALE_SECONDS = _int("WORKER_STALE_SECONDS", 120)
+# Submissions one worker container scores at once, one thread per slot (app.worker). With a
+# GPU machine, EVAL_GPU_PICK=free gives each run a GPU of its own.
+WORKER_SLOTS = _int("WORKER_SLOTS", 1)
 
 # Prediction file contract shared with the data team (copied from admin-2026-protein-data).
 PREDICTION_CONTRACT = Path(__file__).resolve().parents[1] / "contract" / "prediction_contract.json"

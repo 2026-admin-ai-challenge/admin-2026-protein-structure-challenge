@@ -36,7 +36,7 @@ def account_view(user):
 
 def admin_submission_view(row, team, user, positions=None, ranked=frozenset()):
     return {**submission_view(row, positions), "private_score": row.private_score, "team_id": row.team_id,
-            "team": team, "user": user, "attempts": row.attempts, "worker_id": row.worker_id,
+            "team": team, "user": user, "attempts": row.attempts, "worker_id": row.worker_id, "gpu": row.gpu,
             "file_id": row.file.id if row.file else None, "on_leaderboard": row.id in ranked}
 
 
@@ -276,7 +276,7 @@ def requeue(id: int, admin=Depends(admin_user), db=Depends(get_db)):
     # organizer refunded by hand stays refunded. The team limit is not checked here.
     if previous in UNCOUNTED_FAILURES or not s.count_failed:
         row.counted = True
-    row.status, row.attempts, row.worker_id = "queued", 0, None
+    row.status, row.attempts, row.worker_id, row.gpu = "queued", 0, None, None
     row.failure_code = row.error_message = row.log_tail = None
     row.started_at = row.heartbeat_at = row.finished_at = None
     record(db, admin, "submission.requeue", f"submission:{row.id}", {"previous_failure": previous})

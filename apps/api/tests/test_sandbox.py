@@ -157,6 +157,47 @@ def test_turning_isolation_off_checks_the_machine_again_and_says_so(monkeypatch,
     assert infer["isolation"] is False and infer["limits"] is None and infer["tasks"] == int(local.PIDS)
 
 
+def test_the_inference_step_gets_the_gpu_the_run_was_handed(monkeypatch):
+    monkeypatch.setattr(local, "GPUS", "all")
+    evaluator = SandboxEvaluator()
+    evaluator._run_dir, evaluator._gpu = RUN, "3"
+    assert json.loads(evaluator._inference_command("admin-eval-7-abcd1234", None, None, None)[-1])["gpus"] == "3"
+    evaluator._gpu = None
+    assert json.loads(evaluator._inference_command("admin-eval-7-abcd1234", None, None, None)[-1])["gpus"] == "all"
+
+
+def test_a_worker_slot_runs_its_probe_and_steps_as_its_own_user(monkeypatch, configured):
+    # Slots are threads of one process (app.worker), and every step ends by killing its user's processes.
+    sent = scripted(monkeypatch, (0, check_output(**CNU_CONTAINER), ""), (0, probe(network="open"), ""))
+    evaluator = SandboxEvaluator()
+    evaluator.configure(types.SimpleNamespace(eval_isolation=False))
+    evaluator.run_uid = 64002
+    ok, detail = evaluator.ready()
+    assert ok and "uid 64002로 실행" in detail and json.loads(_probe_spec(sent[1]))["run_uid"] == 64002
+    evaluator._run_dir = RUN
+    install = json.loads(evaluator._install_command("admin-eval-7-abcd1234", None, ["numpy"], False, 60)[-1])
+    infer = json.loads(evaluator._inference_command("admin-eval-7-abcd1234", None, None, None)[-1])
+    assert install["run_uid"] == infer["run_uid"] == 64002
+    cleanups = []
+    monkeypatch.setattr(evaluator, "_remote", cleanups.append)
+    evaluator._unstage(local.WORK_DIR / "submission-7-abcd1234")
+    assert "pkill -KILL -U 64002 " in cleanups[0]
+
+
+@pytest.mark.parametrize("load, gpus", [
+    ("gpu=0, 15708, 97\ngpu=1, 4520, 77\ngpu=2, 6, 0\ngpu=0, 15710, 99\n", "2"),
+    ("nvidia_error=Failed to initialize NVML: Driver/library version mismatch\n", "all"),
+])
+def test_with_gpu_picking_the_probe_computes_on_the_emptiest_gpu(monkeypatch, configured, load, gpus):
+    # With all GPUs visible CUDA takes GPU 0, which another user may have filled.
+    monkeypatch.setattr(local, "GPUS", "all")
+    monkeypatch.setattr(local, "GPU_PICK", "free")
+    sent = scripted(monkeypatch, (0, check_output(), ""), (0, load, ""), (0, PROBE_OK, ""))
+    checks, _ = sandbox.examine(load_target())
+    assert not failed(checks) and "nvidia-smi --query-gpu=index,memory.used" in sent[1]
+    assert json.loads(_probe_spec(sent[2]))["gpus"] == gpus
+
+
 def test_the_message_says_which_reasons_turning_isolation_off_would_skip(monkeypatch, configured):
     scripted(monkeypatch, (0, check_output(**CNU_CONTAINER, version="missing"), ""))
     evaluator = SandboxEvaluator()
@@ -198,7 +239,7 @@ def test_ready_names_the_environment_and_proves_the_sandbox_only_now_and_then(mo
     ok, detail = evaluator.ready()
     assert ok and detail.startswith("sandbox evaluator: evaluator@100.64.0.10:2222, GPU 0 Tesla P100-PCIE-16GB")
     assert "Python 3.12.14" in detail and "lock abcdef012345" in detail and "4 cpus, 8g memory" in detail
-    evaluator._verdict = None  # as if the cache ran out
+    evaluator.shared.verdicts.clear()  # as if the cache ran out
     scripted(monkeypatch, (0, check_output(), ""))  # no second probe within GPU_CONTAINER_CACHE_SECONDS
     assert evaluator.ready()[0]
 
@@ -428,6 +469,11 @@ if behaviour == "ok":
         handle.write("id,label\\nTEST_1,1.10\\n")
 elif behaviour == "sleep":
     time.sleep(60)
+elif behaviour.startswith("flood"):  # flood: and keeps running; flood-exit: and ends at once
+    with open(os.path.join(os.path.dirname(output), "flood.bin"), "wb") as handle:
+        handle.write(b"x" * 4096)
+    if behaviour == "flood":
+        time.sleep(60)
 elif behaviour == "environment":
     with open(output, "w") as handle:
         handle.write(" ".join(sorted(os.environ)))
@@ -499,14 +545,14 @@ def machine(monkeypatch, tmp_path):
     return types.SimpleNamespace(tmp=tmp_path, root=root, work=work, bin=bin_dir, sandboxes=bin_dir / "bwrap.log")
 
 
-def launch_step(machine, behaviour="ok", seconds=30, mode="infer", command=None, isolation=True):
+def launch_step(machine, behaviour="ok", seconds=30, mode="infer", command=None, isolation=True, **extra):
     """Runs the launcher as the worker would over SSH, on one prepared run directory."""
     run = machine.work / "submission-1-test"
     (run / "submission").mkdir(parents=True, exist_ok=True)
     (run / "output").mkdir(exist_ok=True)
     (run / "submission" / "inference.py").write_text(INFERENCE)
     (run / "submission" / "behave.txt").write_text(behaviour)
-    step = sandbox.spec(mode, str(run), seconds, str(run / "step.pid"), isolation, command=command or shlex.split(local.COMMAND))
+    step = sandbox.spec(mode, str(run), seconds, str(run / "step.pid"), isolation, command=command or shlex.split(local.COMMAND), **extra)
     return subprocess.run(sandbox.launch_command(step), capture_output=True, timeout=90), run
 
 
@@ -540,7 +586,7 @@ def test_without_isolation_the_timer_still_stops_the_step(machine):
     assert subprocess.run(["pgrep", "-f", str(run)], capture_output=True).returncode == 1
 
 
-@pytest.mark.parametrize("behaviour, code", [("ok", 0), ("3", 3), ("255", 1), ("125", 1)])
+@pytest.mark.parametrize("behaviour, code", [("ok", 0), ("3", 3), ("255", 1), ("125", 1), ("124", 1)])
 def test_the_launcher_reports_the_steps_own_exit_code(machine, behaviour, code):
     done, run = launch_step(machine, behaviour)
     assert done.returncode == code, done.stderr
@@ -565,6 +611,18 @@ def test_a_missing_environment_is_the_machines_fault(machine):
     (machine.root / "env" / "bin" / "python").unlink()
     done, _ = launch_step(machine)
     assert done.returncode == 125 and b"is missing" in done.stderr
+
+
+@pytest.mark.parametrize("behaviour, isolation", [("flood", True), ("flood-exit", True), ("flood", False)])
+def test_the_launcher_stops_a_step_whose_output_passes_its_limit(machine, behaviour, isolation):
+    # Watched on the GPU machine, so the worker does not ask its size over SSH every few seconds.
+    started = time.monotonic()
+    done, run = launch_step(machine, behaviour, isolation=isolation, max_output=1000)
+    assert done.returncode == sandbox.OUTPUT_OVER == launch.OUTPUT_OVER and b"output passed 1000 bytes" in done.stderr
+    assert time.monotonic() - started < 20
+    assert subprocess.run(["pgrep", "-f", str(run)], capture_output=True).returncode == 1  # nothing left running
+    (run / "output" / "flood.bin").unlink()
+    assert launch_step(machine, "ok", isolation=isolation, max_output=1000)[0].returncode == 0
 
 
 def test_the_launchers_own_timer_stops_the_step(machine):
@@ -655,6 +713,15 @@ def test_a_sandbox_that_cannot_start_is_a_server_error_and_is_checked_again(mach
     outcome = run_with(machine, "ok", evaluator)
     assert outcome.failure_code == "system_error" and "uid map" in outcome.log
     assert evaluator._verified is None
+
+
+def test_output_past_the_limit_is_the_teams_error_without_polling_over_ssh(machine, monkeypatch):
+    monkeypatch.setattr(local, "MAX_OUTPUT_BYTES", 1000)
+    started = time.monotonic()
+    outcome = run_with(machine, "flood")
+    assert outcome.failure_code == "output_invalid" and "output passed 1000 bytes" in outcome.log
+    assert time.monotonic() - started < 20
+    assert "du -sb" not in (machine.tmp / "calls.log").read_text()
 
 
 def test_a_timeout_kills_the_sandbox(machine, monkeypatch):

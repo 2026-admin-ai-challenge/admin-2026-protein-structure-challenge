@@ -90,6 +90,8 @@ class Submission(Base):
     evaluator: Mapped[str | None] = mapped_column(String(12), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # EVAL_GPU_PICK=free: the GPU the worker handed the run. A running submission holds it.
+    gpu: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

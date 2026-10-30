@@ -50,8 +50,9 @@ def limits_view(s):
 
 
 def queue_positions(db):
-    """1-based place in line for every submission that is waiting or running."""
-    ids = db.scalars(select(Submission.id).where(Submission.status.in_(PENDING)).order_by(Submission.id)).all()
+    """1-based place in line of every waiting submission: 1 starts next. Running ones have
+    none, since several may run at once (WORKER_SLOTS)."""
+    ids = db.scalars(select(Submission.id).where(Submission.status == "queued").order_by(Submission.id)).all()
     return {id: index + 1 for index, id in enumerate(ids)}
 
 

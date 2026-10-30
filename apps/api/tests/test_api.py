@@ -124,6 +124,20 @@ def test_upload_size_limit(client, db, participant, monkeypatch):
     assert client.post("/api/auth/login", content=b"x" * 70000, headers={"Content-Type": "application/json"}).status_code == 413
 
 
+def test_upload_holds_no_db_transaction_while_the_zip_streams(client, db, participant, monkeypatch):
+    # An open transaction pins a pooled connection, so a few slow uploads would starve every other request.
+    receive = storage.receive
+    open_during_stream = []
+
+    async def watched(stream, target, limit):
+        open_during_stream.append(db.in_transaction())
+        return await receive(stream, target, limit)
+
+    monkeypatch.setattr(storage, "receive", watched)
+    assert upload(client).status_code == 202
+    assert open_during_stream == [False]
+
+
 def test_team_limit_is_shared_by_all_accounts_and_never_resets(client, db, participant):
     settings = db.get(Settings, 1)
     settings.team_submission_limit = 2

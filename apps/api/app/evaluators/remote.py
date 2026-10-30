@@ -22,6 +22,10 @@ change during the run. When a run fails for a server reason (the link dropped, d
 failed), the verdict is dropped and everything is checked again before the next submission,
 so an outage costs one submission at most, not the whole queue.
 
+With EVAL_GPU_PICK=free a run gets ONE GPU of EVAL_GPUS: one that is nearly empty right before
+the run (free_gpus) and that no other running submission holds. The worker hands it out
+(app.worker.claim), so several worker slots can share a machine whose GPUs others use too.
+
     python -m app.evaluators.remote     # run the checks by hand and print the result
 """
 import ipaddress
@@ -36,7 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import docker as local
-from .base import failure
+from .base import Shared, failure
 
 SSH_PORT = os.getenv("EVAL_SSH_PORT", "22")
 # Only the private key's FILE is configured, never its content.
@@ -57,11 +61,18 @@ GPU_CONTAINER_SECONDS = 60
 OK_CACHE_SECONDS, FAILED_CACHE_SECONDS = 60, 15
 # Starting a GPU container is the slow check: a machine that passed it is spared it this long.
 GPU_CONTAINER_CACHE_SECONDS = 600
-# Output size is polled over SSH, so less often than docker.py does on its own disk.
+# Output size is polled over SSH, so less often than docker.py does on its own disk. Docker
+# there only: the sandbox launcher watches it on the machine itself.
 OUTPUT_CHECK_SECONDS = 3
 FETCH_SECONDS = 60
 # Leftovers of dead workers are looked for at most this often.
 PRUNE_SECONDS = 600
+# EVAL_GPU_PICK=free: a GPU is free while its memory in use and its utilization stay under
+# these over a few seconds. On a shared machine, that is what another user's job shows as.
+GPU_FREE_MEMORY_MIB = int(os.getenv("EVAL_GPU_FREE_MEMORY_MIB", "2048"))
+GPU_FREE_UTILIZATION = int(os.getenv("EVAL_GPU_FREE_UTILIZATION", "10"))
+# While no GPU is free, the machine is asked again at most this often.
+GPU_RECHECK_SECONDS = 15
 
 HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
@@ -191,6 +202,19 @@ if mkdir -p "$WORK" 2>/dev/null && [ -w "$WORK" ]; then echo "work=ok"; else ech
 df -Pk "$WORK" 2>/dev/null | awk 'NR==2 {print "free_kb=" $4}'
 """
 
+# EVAL_GPU_PICK=free: prints `gpu=index, memory in use (MiB), utilization (%)` for every GPU,
+# three rounds a second apart because utilization is a snapshot. Only reads.
+LOAD_SCRIPT = r"""
+for round in 1 2 3; do
+  [ "$round" = 1 ] || sleep 1
+  if ! out=$(nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader,nounits 2>&1); then
+    echo "nvidia_error=$(echo "$out" | head -n 1)"
+    exit 0
+  fi
+  echo "$out" | sed 's/^/gpu=/'
+done
+"""
+
 
 @dataclass
 class Check:
@@ -234,7 +258,7 @@ def _connection_failure(target, detail):
 def settings_checks(target, env=os.environ, gpu_required=True):
     """What can be judged here, without connecting. Reported before any SSH attempt."""
     checks = []
-    problem = local.gpu_problem(required=gpu_required)
+    problem = local.gpu_problem(required=gpu_required, pick=True)
     if problem:
         checks.append(Check("gpu_selection", False, problem, SETTINGS_FIX))
     if not local.INPUT_HOST_DIR:
@@ -436,6 +460,58 @@ def chosen_gpus(gpus):
     return [row for row in gpus if local.GPUS == "all" or row[0] in local.GPUS.split(",")]
 
 
+def gpu_summary(gpus):
+    """The GPUs runs may use, as the admin page shows them."""
+    names = ", ".join(f"GPU {row[0]} {row[1]} (드라이버 {row[2]})" for row in chosen_gpus(gpus))
+    return f"{names} 중 채점마다 빈 GPU 1장" if local.GPU_PICK == "free" else names
+
+
+def gpu_load(text):
+    """{index: (most memory in use in MiB, highest utilization in %)} over the rounds of
+    LOAD_SCRIPT, for the GPUs EVAL_GPUS names. A value nvidia-smi cannot read ([N/A]) is busy."""
+    load = {}
+    for key, value in _pairs(text):
+        row = [part.strip() for part in value.split(",")]
+        if key != "gpu" or len(row) < 3 or not (local.GPUS == "all" or row[0] in local.GPUS.split(",")):
+            continue
+        try:
+            sample = (float(row[1]), float(row[2]))
+        except ValueError:
+            sample = (float("inf"), float("inf"))
+        memory, utilization = load.get(row[0], (0.0, 0.0))
+        load[row[0]] = (max(memory, sample[0]), max(utilization, sample[1]))
+    return load
+
+
+def emptiest_first(load, indexes=None):
+    """The GPUs of `load` (or only `indexes`), by memory in use, then utilization."""
+    return sorted(load if indexes is None else indexes, key=lambda index: (*load[index], len(index), index))
+
+
+def usable_gpus(load, held=()):
+    """The GPUs under both limits that no run of ours holds, emptiest first."""
+    free = [index for index, (memory, utilization) in load.items()
+            if index not in held and memory < GPU_FREE_MEMORY_MIB and utilization < GPU_FREE_UTILIZATION]
+    return emptiest_first(load, free)
+
+
+def busy_note(load, held=(), problem=None):
+    """Why the queue waits for a GPU, for the admin page."""
+    if problem:
+        return f"GPU 사용량을 읽지 못해 채점을 기다립니다: {problem}"
+    states = []
+    for index in sorted(load, key=lambda index: (len(index), index)):
+        memory, utilization = load[index]
+        if index in held:
+            states.append(f"GPU {index} 다른 슬롯이 채점 중")
+        elif memory == float("inf"):
+            states.append(f"GPU {index} 사용량 알 수 없음")
+        else:
+            states.append(f"GPU {index} {memory:.0f} MiB·{utilization:.0f}%")
+    return (f"비어 있는 GPU가 없어 채점을 기다립니다(기준 {GPU_FREE_MEMORY_MIB} MiB·{GPU_FREE_UTILIZATION}% 미만, "
+            f"{GPU_RECHECK_SECONDS}초마다 다시 확인): {', '.join(states) or 'EVAL_GPUS의 GPU가 서버에 없음'}")
+
+
 def describe(target, checks):
     failed = [check for check in checks if not check.ok]
     where = f"원격 채점 서버 {target.label}" if target else "원격 채점 서버"
@@ -454,65 +530,112 @@ class RemoteEvaluator(local.DockerEvaluator):
     FAULT_CODES = (255,)
 
     def __init__(self):
-        self._verdict = None             # (valid until, target, (ok, detail))
+        self.shared = Shared()           # checks and GPU readings; app.worker's slots share one
         self._verified = None            # the target that last passed every check
-        self._gpu_proved = (None, 0.0)   # (target, valid until)
         self._active = None              # the target the running submission is bound to
         self._containers = []            # container names started by the running submission
+        self._gpu = None                 # EVAL_GPU_PICK=free: the GPU the running submission was handed
         self._pruned_at = float("-inf")
         self._size = (0.0, 0)
+
+    @property
+    def picks_gpus(self):
+        return local.GPU_PICK == "free"
 
     # -- readiness --
 
     def _forget(self):
-        self._verdict, self._verified, self._gpu_proved = None, None, (None, 0.0)
+        self._verified = None
+        self.shared.forget()
+
+    def _check_key(self, target):
+        """What a check result is for: another key is checked anew."""
+        return target
 
     def _examine(self, target, prove):
         """(checks, facts): `facts` is what _summary needs once every check passed."""
         return examine(target, gpu_container=prove)
 
     def _summary(self, target, gpus):
-        names = ", ".join(f"GPU {row[0]} {row[1]} (드라이버 {row[2]})" for row in chosen_gpus(gpus))
-        return f"remote evaluator: {target.label}, {names}, image {local.IMAGE}, {local.CPUS} cpus, {local.MEMORY} memory"
+        return f"remote evaluator: {target.label}, {gpu_summary(gpus)}, image {local.IMAGE}, {local.CPUS} cpus, {local.MEMORY} memory"
 
     def _describe(self, target, checks):
         """The not-ready message the admin page shows."""
         return describe(target, checks)
 
     def ready(self):
-        now = time.monotonic()
         try:
             target = load_target()
         except TargetInvalid as error:
             self._forget()
             return False, describe(None, [settings_failure(error)])
-        if self._verdict and self._verdict[1] == target and now < self._verdict[0]:
-            return self._verdict[2]
-        prove = not (self._gpu_proved[0] == target and now < self._gpu_proved[1])
-        checks, facts = self._examine(target, prove)
+        checks, facts = self._checked(target)
         if all(check.ok for check in checks):
-            if prove:
-                self._gpu_proved = (target, time.monotonic() + GPU_CONTAINER_CACHE_SECONDS)
             self._verified = target
-            result = True, self._summary(target, facts)
-            ttl = OK_CACHE_SECONDS
-        else:
-            self._verified, self._gpu_proved = None, (None, 0.0)
-            result, ttl = (False, self._describe(target, checks)), FAILED_CACHE_SECONDS
-        self._verdict = (time.monotonic() + ttl, target, result)
-        return result
+            return True, self._summary(target, facts)
+        self._verified = None
+        return False, self._describe(target, checks)
+
+    def _checked(self, target):
+        """(checks, facts) of the last check, made again once it is too old. One slot checks at
+        a time, and the others take its result instead of asking the machine themselves."""
+        key, shared = self._check_key(target), self.shared
+        with shared.checking:
+            until, checks, facts = shared.verdicts.get(key, (0.0, None, None))
+            if time.monotonic() < until:
+                return checks, facts
+            prove = time.monotonic() >= shared.proved.get(key, 0.0)
+            checks, facts = self._examine(target, prove)
+            ok = all(check.ok for check in checks)
+            if ok and prove:
+                shared.proved[key] = time.monotonic() + GPU_CONTAINER_CACHE_SECONDS
+            elif not ok:
+                shared.proved.pop(key, None)
+            shared.verdicts[key] = (time.monotonic() + (OK_CACHE_SECONDS if ok else FAILED_CACHE_SECONDS), checks, facts)
+            return checks, facts
+
+    def free_gpus(self, held=()):
+        """EVAL_GPU_PICK=free: the GPUs of EVAL_GPUS that are nearly empty and not `held`,
+        emptiest first, by a reading at most GPU_RECHECK_SECONDS old that every slot shares.
+        While there is none, gpu_note says why."""
+        load, problem = self._gpu_load()
+        free = [] if problem else usable_gpus(load, held)
+        self.gpu_note = None if free else busy_note(load, held, problem)
+        return free
+
+    def _gpu_load(self):
+        """(load, problem): the machine's GPU load, read again once the last reading is
+        GPU_RECHECK_SECONDS old. Our own runs need no fresher one: the worker leaves out the
+        GPUs they hold, by the database."""
+        target, shared = self._target(), self.shared
+        with shared.reading:
+            if shared.load and shared.load[0] == target and time.monotonic() - shared.load[1] < GPU_RECHECK_SECONDS:
+                return shared.load[2:]
+            try:
+                code, out, err = _run(target, remote_shell(LOAD_SCRIPT), CHECK_SECONDS)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                code, out, err = -1, "", f"{type(error).__name__}: {error}"
+            problem = dict(_pairs(out)).get("nvidia_error") if code == 0 else (_first_line(err) or f"종료 코드 {code}")
+            load = {} if problem else gpu_load(out)
+            shared.load = (target, time.monotonic(), load, problem)
+            return load, problem
 
     # -- one run --
 
     def run(self, submission, zip_path, tick):
         if self._verified is None:
             return failure("system_error", log="no GPU machine has passed its checks")
+        gpu = getattr(submission, "gpu", None) if self.picks_gpus else None
+        if self.picks_gpus and not gpu:
+            return failure("system_error", log="EVAL_GPU_PICK=free, but the worker handed this run no GPU")
         # Bound for the whole run: kill, fetch and cleanup go where the containers are.
-        self._active, self._containers = self._verified, []
+        self._active, self._containers, self._gpu = self._verified, [], gpu
         try:
             outcome = super().run(submission, zip_path, tick)
         finally:
-            self._active = None
+            self._active = self._gpu = None
+        if gpu:
+            outcome.log = f"ran on GPU {gpu} (EVAL_GPU_PICK=free)\n{outcome.log or ''}"
         if outcome.failure_code == "system_error":
             # The machine or the link to it may be gone: check everything again first.
             self._forget()
@@ -531,6 +654,9 @@ class RemoteEvaluator(local.DockerEvaluator):
 
     def _wrap(self, command, guard=False):
         return ssh_command(self._target(), remote_shell(command, guard))
+
+    def _gpus(self):
+        return self._gpu or local.GPUS
 
     def _watch(self, name, command, limit, tick, output_dir=None):
         self._containers.append(name)
