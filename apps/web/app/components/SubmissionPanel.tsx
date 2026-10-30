@@ -46,7 +46,7 @@ export default function SubmissionPanel({
   async function load() {
     try {
       const data = await api<SubmissionHistory>("/submissions/me");
-      // A submission that just left the queue may have changed the leaderboard.
+      // A submission that just left the queue may have changed the scored-model count.
       const finished = previous.current.some(
         (old) =>
           isPending(old.status) &&

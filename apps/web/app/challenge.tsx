@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { api } from "./lib/api";
 import { count } from "./format";
-import type { Entry, User, Competition } from "./types";
+import type { User, Competition } from "./types";
 const tabs = [
   "Overview",
   "Data",
@@ -49,8 +49,6 @@ export default function Challenge({
   const [tab, setTab] = useState(initialTab),
     [data, setData] = useState<Competition | null>(null),
     [user, setUser] = useState<User | null>(null),
-    [entries, setEntries] = useState<Entry[]>([]),
-    [boardVersion, setBoardVersion] = useState(0),
     [auth, setAuth] = useState(false),
     [dark, setDark] = useState(false),
     [error, setError] = useState(""),
@@ -66,21 +64,6 @@ export default function Challenge({
       setError((e as Error).message);
     }
   }
-  // Public top-of-board preview shown on the Overview tab.
-  async function refreshBoard() {
-    try {
-      setEntries(
-        (await api<{ entries: Entry[] }>("/leaderboard?board=public")).entries,
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    }
-    setBoardVersion((v) => v + 1);
-  }
-  function refreshAll() {
-    refresh();
-    refreshBoard();
-  }
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (!document.hidden) refresh();
@@ -95,7 +78,7 @@ export default function Challenge({
     };
   }, []);
   useEffect(() => {
-    refreshAll();
+    refresh();
     api<User>("/auth/me")
       .then(setUser)
       .catch(() => {});
@@ -107,7 +90,6 @@ export default function Challenge({
     setTab(v);
     setMobile(false);
     setNotice("");
-    if (v === "Overview") refreshBoard();
     setTimeout(
       () =>
         content.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -343,7 +325,7 @@ export default function Challenge({
               datasetAvailable={data?.dataset_available ?? false}
               stat={stat}
               limits={data?.limits}
-              entries={entries}
+              live={!settings?.frozen}
               navigate={navigate}
             />
           )}
@@ -351,14 +333,14 @@ export default function Challenge({
           {tab === "Evaluation" && <EvaluationPanel limits={data?.limits} />}
           {tab === "Rules" && <RulesPanel limits={data?.limits} />}
           {tab === "Leaderboard" && (
-            <LeaderboardPanel key={boardVersion} competition={data} />
+            <LeaderboardPanel competition={data} />
           )}
           {tab === "Submit" && (
             <SubmissionPanel
               user={user}
               competition={data}
               onLogin={() => setAuth(true)}
-              onScored={refreshAll}
+              onScored={refresh}
             />
           )}
           {tab === "Admin" && (
@@ -366,7 +348,7 @@ export default function Challenge({
               user={user}
               settings={settings}
               onLogin={() => setAuth(true)}
-              onChanged={refreshAll}
+              onChanged={refresh}
             />
           )}
         </section>

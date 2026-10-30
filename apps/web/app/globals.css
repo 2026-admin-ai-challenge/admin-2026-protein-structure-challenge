@@ -21,6 +21,7 @@
   --lead-from: #6452bc;
   --lead-to: #45378f;
   --tree-line: #cdc6e4;
+  --board-glow: #e9e2fa;
 }
 * {
   box-sizing: border-box;
@@ -847,6 +848,85 @@ h1 span {
   font-size: 15px !important;
   font-weight: 600;
 }
+/* Live leaderboard: rows slide to their new rank, so each one needs its own layer and
+   an opaque background while it passes over the others. Separate borders belong to the
+   cells and slide with them (collapsed ones stay behind, hidden by the moving rows). */
+.board-table table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.board-table tbody tr {
+  position: relative;
+  background: var(--bg);
+}
+/* Teams without a score yet: listed below the ranks, quieter. */
+.board-table tr.unranked .score {
+  color: var(--muted) !important;
+  font-weight: 450;
+}
+.rank-move {
+  display: inline-flex;
+  min-width: 34px;
+}
+.rank-move > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  animation: rank-move 6s ease forwards;
+}
+.rank-move .up {
+  color: var(--green);
+  background: #e7f3ed;
+}
+.rank-move .down {
+  color: #b46d6d;
+  background: #f9eded;
+}
+.rank-move .new {
+  color: var(--purple);
+  background: var(--lav);
+  letter-spacing: 0.5px;
+}
+[data-theme="dark"] .rank-move .up {
+  color: #9bc8ae;
+  background: #202d25;
+}
+[data-theme="dark"] .rank-move .down {
+  color: #dba4a4;
+  background: #322327;
+}
+@keyframes rank-move {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  6%,
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.board-switch > .board-live {
+  margin-left: auto;
+  color: var(--green);
+  font-weight: 500;
+}
+.board-live .live-dot {
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
 .empty {
   text-align: center;
   padding: 30px 20px 34px;
@@ -1556,6 +1636,7 @@ input {
   --lead-from: #5b49b3;
   --lead-to: #3a2f7c;
   --tree-line: #4a4360;
+  --board-glow: #3b3053;
   color-scheme: dark;
 }
 [data-theme="dark"] .brand img,
@@ -2028,6 +2109,10 @@ input {
   * {
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+  .rank-move > span,
+  .board-live .live-dot {
+    animation: none;
   }
 }
 

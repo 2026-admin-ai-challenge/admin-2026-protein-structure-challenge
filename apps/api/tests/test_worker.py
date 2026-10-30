@@ -33,11 +33,16 @@ def scored(db, user, public, private, seconds=0, evaluator="mock", zip_bytes=Non
     return row
 
 
+def waiting(team):
+    """How the board lists a team that has no score on it yet."""
+    return {"rank": None, "team": team, "score": None, "grading_seconds": None, "submissions": 0, "last_submission": None}
+
+
 def test_worker_scores_queue_in_order_and_updates_leaderboard(client, db, participant):
     first = upload(client, mock_zip(public=0.5, private=0.9)).json()
     second = upload(client, mock_zip(public=0.7, private=0.1)).json()
     assert (first["queue_position"], second["queue_position"]) == (1, 2)
-    assert client.get("/api/leaderboard").json()["entries"] == []
+    assert client.get("/api/leaderboard").json()["entries"] == [waiting(participant["team_name"])]
 
     done = process_one(db, MOCK, "worker-a")
     assert done.id == first["id"] and done.status == "succeeded" and done.evaluator == "mock"
@@ -69,7 +74,7 @@ def test_failures_are_recorded_and_count_by_default(client, db, participant, cod
     seen = client.get(f"/api/submissions/{submitted['id']}").json()
     assert seen["failure_code"] == code and seen["error_message"] and "mock" not in seen["error_message"]
     assert client.get("/api/submissions/me").json()["used"] == 1
-    assert client.get("/api/leaderboard").json()["entries"] == []
+    assert client.get("/api/leaderboard").json()["entries"] == [waiting(participant["team_name"])]
 
 
 def test_zip_violations_found_by_the_worker_never_use_an_attempt(client, db, participant):
@@ -237,7 +242,7 @@ def test_frozen_board_keeps_scoring_but_hides_new_ranks(client, db, participant,
     db.commit()
     upload(client, mock_zip(public=0.6, private=0.6))
     assert process_one(db, MOCK, "worker-a").public_score == 0.6
-    assert client.get("/api/leaderboard").json()["entries"] == []
+    assert client.get("/api/leaderboard").json()["entries"] == [waiting(participant["team_name"])]
     client.cookies.set("admin_session", organizer)
     assert client.post("/api/admin/leaderboard/recalculate").status_code == 409
     assert client.patch("/api/admin/competition", json={"frozen": False}).status_code == 200
@@ -268,6 +273,38 @@ def test_ties_go_to_the_earlier_submission_and_teams_appear_once(client, db, par
     entries = client.get("/api/leaderboard").json()["entries"]
     assert [(e["rank"], e["team"], e["score"], e["submissions"]) for e in entries] == [
         (1, "Other team", 0.8, 1), (2, participant["team_name"], 0.8, 2)]
+
+
+def test_organizer_submissions_never_take_a_rank(client, db, participant, organizer):
+    admin = db.scalar(select(User).where(User.role == "ADMIN"))
+    other = add_account(db, "Other team", "otherteam")
+    test_model = scored(db, {"id": admin.id, "team_id": admin.team_id}, 0.99, 0.99, seconds=1)
+    scored(db, participant, 0.7, 0.5, seconds=2)
+    scored(db, other, 0.6, 0.4, seconds=3)
+    rebuild(db)
+    rebuild(db, "private")
+    db.commit()
+    assert db.scalars(select(LeaderboardEntry).where(LeaderboardEntry.team_id == admin.team_id)).all() == []
+    expected = [(1, participant["team_name"]), (2, "Other team")]
+    assert [(e["rank"], e["team"]) for e in client.get("/api/leaderboard").json()["entries"]] == expected
+    # A board stored before organizers were left out still does not show them.
+    db.add(LeaderboardEntry(team_id=admin.team_id, submission_id=test_model.id, board="public", score=0.99,
+                            achieved_at=now(), submission_count=1, last_submission=now()))
+    db.commit()
+    assert [(e["rank"], e["team"]) for e in client.get("/api/leaderboard").json()["entries"]] == expected
+
+
+def test_teams_without_a_score_are_listed_after_the_ranked_ones(client, db, participant, organizer):
+    add_account(db, "Quiet team", "quietteam")
+    add_account(db, "Another quiet", "anotherquiet")
+    banned = add_account(db, "Banned team", "bannedteam")
+    db.get(User, banned["id"]).banned = True
+    scored(db, participant, 0.7, 0.5)
+    rebuild(db)
+    db.commit()
+    # Banned teams and the organizers' team stay off; the rest wait below the ranks, by name.
+    assert client.get("/api/leaderboard").json()["entries"][1:] == [waiting("Another quiet"), waiting("Quiet team")]
+    assert client.get("/api/leaderboard").json()["entries"][0]["rank"] == 1
 
 
 def test_ties_go_to_the_smaller_zip_then_the_earlier_submission(client, db, participant):

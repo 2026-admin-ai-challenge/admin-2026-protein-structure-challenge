@@ -1,11 +1,12 @@
 // Mirrors docs/api-contract.md. Change both together.
+// A team with no score on the board yet comes last with rank and score null.
 export type Entry = {
-  rank: number;
+  rank: number | null;
   team: string;
-  score: number;
+  score: number | null;
   grading_seconds: number | null;
   submissions: number;
-  last_submission: string;
+  last_submission: string | null;
 };
 export type User = {
   id: number;

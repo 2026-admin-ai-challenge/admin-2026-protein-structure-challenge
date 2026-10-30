@@ -110,8 +110,11 @@
 
 ```json
 {"board": "public", "frozen": false, "evaluator": "mock",
- "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "grading_seconds": 12.345, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"}]}
+ "entries": [{"rank": 1, "team": "Team 03", "score": 0.71234, "grading_seconds": 12.345, "submissions": 4, "last_submission": "2026-10-24T03:10:00Z"},
+             {"rank": null, "team": "Team 07", "score": null, "grading_seconds": null, "submissions": 0, "last_submission": null}]}
 ```
+
+관리자(ADMIN) 계정의 제출은 순위에 들어가지 않습니다. 이 보드에 점수가 없는 참가 팀(차단·관리자 팀 제외)도 순위 뒤에 팀 이름 순으로 `rank`·`score`가 `null`인 항목으로 나옵니다. 웹은 순위를 "—", 점수를 0으로 표시합니다. 웹 리더보드는 화면이 보이는 동안 이 응답을 10초마다 다시 받아 순위 변화를 애니메이션으로 보여 주고, 순위가 동결되면 다시 받지 않습니다.
 
 `final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`과 공개 예제 `example-input`(`example_input.csv`), `example-features`(`example_features.csv`), `example-structures`(`example_structures.zip`), `example-output`(`example_output.csv`)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
 
