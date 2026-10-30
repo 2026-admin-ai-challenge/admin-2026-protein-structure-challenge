@@ -189,6 +189,12 @@ def sync_sheet(db, text, exclusive=False, actor="cli"):
         elif not verify(password, user.password_hash):
             user.password_hash = hasher.hash(password)
             changed = True
+        elif hasher.check_needs_rehash(user.password_hash):
+            # Same password, hashed when the parameters were slower. Signing in costs the
+            # old parameters until it is rewritten, so this is where accounts issued before
+            # the change catch up. It signs the account out, like any new hash does.
+            user.password_hash = hasher.hash(password)
+            changed = True
         summary["updated" if changed else "unchanged"] += 1
     if exclusive:
         for user in db.scalars(select(User).where(User.role == "USER", User.banned.is_(False))):

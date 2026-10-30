@@ -181,6 +181,37 @@ def test_sheet_manages_one_account_of_a_team_that_has_two(db):
     assert verify("Other-Pass-123", newer.password_hash) and older.banned and not newer.banned
 
 
+def test_the_sheet_rehashes_passwords_left_on_the_old_parameters(db):
+    """Accounts issued before the argon2 settings changed keep paying the old, slower hash
+    at every sign-in until the sheet is run again."""
+    from argon2 import PasswordHasher
+    from app.models import now
+    from app.security import hasher
+
+    slow = PasswordHasher(time_cost=3, memory_cost=64 * 1024, parallelism=4)
+    sheet = "team_name,password\nTeam 01,First-Pass-123\n"
+    sync_sheet(db, sheet)
+    user = db.scalar(select(User))
+    user.password_hash = slow.hash("First-Pass-123")
+    db.commit()
+    # The old hash still signs in: argon2 keeps the parameters inside the hash itself.
+    assert verify("First-Pass-123", user.password_hash) and hasher.check_needs_rehash(user.password_hash)
+
+    assert sync_sheet(db, sheet)["updated"] == 1
+    db.commit()
+    assert not hasher.check_needs_rehash(user.password_hash)
+    assert verify("First-Pass-123", user.password_hash)
+    assert sync_sheet(db, sheet)["unchanged"] == 1  # nothing left to do
+
+    # A password the team chose is left alone, old parameters and all: the sheet does not
+    # know it, so re-hashing would put the sheet's password back.
+    user.password_changed_at, user.password_hash = now(), slow.hash("Team-Chosen-456")
+    db.commit()
+    assert sync_sheet(db, sheet).get("team_passwords_kept") == 1
+    db.commit()
+    assert verify("Team-Chosen-456", user.password_hash) and hasher.check_needs_rehash(user.password_hash)
+
+
 def test_sheet_never_touches_organizers(db, organizer):
     with pytest.raises(ValueError, match="운영진 팀"):
         sync_sheet(db, "team_name,password\nORGANIZERS,Some-Pass-123\n")

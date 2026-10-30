@@ -15,7 +15,12 @@ from .db import get_db
 from .errors import ApiError
 from .models import RateBucket, User
 
-hasher = PasswordHasher()
+# Tuned for the one-OCPU web server. The library's defaults (t=3, m=64 MiB, p=4) measured
+# about 2.5 s a sign-in there, because four lanes share one core, and each hash in flight
+# holds 64 MiB of a 954 MiB machine. These are OWASP's recommended floor and cost about a
+# fifth of the work. Parameters live inside each hash, so passwords hashed with the old
+# settings still verify; sync_accounts re-hashes them (accounts.py).
+hasher = PasswordHasher(time_cost=2, memory_cost=19 * 1024, parallelism=1)
 DUMMY_HASH = hasher.hash("never-a-valid-password")
 
 
