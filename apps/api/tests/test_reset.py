@@ -68,7 +68,8 @@ def test_reset_deletes_results_and_the_next_competition_starts_clean(client, db,
     assert (log.id, log.action, log.actor, log.ok) == (1, "competition.reset", "organizer", True)
     assert json.loads(log.detail)["submissions"] == 2
 
-    assert client.get("/api/leaderboard").json()["entries"] == []
+    # The team stays, now without a score.
+    assert [e["rank"] for e in client.get("/api/leaderboard").json()["entries"]] == [None]
     assert client.get("/api/leaderboard?board=final").status_code == 403
     assert client.get("/api/competition").json()["submissions"] == 0
 

@@ -17,6 +17,11 @@ def _rank_key(row, score):
     return (-score, size, utc(row.created_at), row.id)
 
 
+def ranked_users():
+    """Accounts whose submissions may take a rank: participants that are not banned."""
+    return User.role == "USER", User.banned.is_(False)
+
+
 def best_of(rows, field="public_score"):
     """The submission a board takes for one team, by `_rank_key` on `field`. ZIP retention
     keeps the same submission (files.py) and the board orders teams with the same key, so
@@ -31,12 +36,13 @@ def rebuild(db, board="public", selection="best_public"):
     public: each team's best Public score.
     private (final): with selection "best_public" the Private score of that same
     submission; with "best_private" each team's best Private score.
-    Submissions scored by a different evaluator (e.g. mock while running docker) are ignored.
+    Submissions scored by a different evaluator (e.g. mock while running docker) are ignored,
+    and so are organizers' (ADMIN accounts): their test models never take a rank.
     """
     rows = db.scalars(
         select(Submission)
         .join(User, User.id == Submission.user_id)
-        .where(Submission.status == "succeeded", Submission.evaluator == EVALUATOR, User.banned.is_(False))
+        .where(Submission.status == "succeeded", Submission.evaluator == EVALUATOR, *ranked_users())
     ).all()
     db.execute(delete(LeaderboardEntry).where(LeaderboardEntry.board == board))
     teams = {}
@@ -57,16 +63,29 @@ def rebuild(db, board="public", selection="best_public"):
 
 
 def listing(db, board):
+    """The board as shown: ranked teams in order, then every other participating team
+    without a rank or score (no scored submission on this board yet), by name."""
+    # Filtered again so a board stored before a ban (or before organizers were left out)
+    # never shows those teams.
     rows = db.execute(
         select(LeaderboardEntry, Team.name, Submission)
         .join(Team, Team.id == LeaderboardEntry.team_id)
         .join(Submission, Submission.id == LeaderboardEntry.submission_id)
         .join(User, User.id == Submission.user_id)
-        .where(LeaderboardEntry.board == board, User.banned.is_(False))
+        .where(LeaderboardEntry.board == board, *ranked_users())
     ).all()
     rows.sort(key=lambda found: _rank_key(found[2], found[0].score))
-    return [
+    ranked = [
         {"rank": i + 1, "team": name, "score": entry.score, "grading_seconds": submission.grading_seconds,
          "submissions": entry.submission_count, "last_submission": entry.last_submission}
         for i, (entry, name, submission) in enumerate(rows)
+    ]
+    on_board = [entry.team_id for entry, _, _ in rows]
+    waiting = db.scalars(
+        select(Team.name).join(User, User.team_id == Team.id)
+        .where(*ranked_users(), Team.id.not_in(on_board)).distinct()
+    ).all()
+    return ranked + [
+        {"rank": None, "team": name, "score": None, "grading_seconds": None, "submissions": 0, "last_submission": None}
+        for name in sorted(waiting)
     ]

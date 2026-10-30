@@ -28,7 +28,7 @@ export default function AdminPanel({
   user: User | null;
   settings: Settings | undefined;
   onLogin: () => void;
-  // Tells the page to reload competition status and the public leaderboard.
+  // Tells the page to reload competition status. Open leaderboards refresh themselves.
   onChanged: () => void;
 }) {
   const [section, setSection] = useState<Section>("overview");

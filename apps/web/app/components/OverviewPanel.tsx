@@ -27,22 +27,26 @@ import {
   Lock,
   RotateCcw,
 } from "lucide-react";
-import type { Entry, Limits, Meta } from "../types";
+import type { Limits, Meta } from "../types";
 import { megabytes } from "../format";
+import { useLeaderboard } from "../lib/useLeaderboard";
 import { LeaderboardTable } from "./LeaderboardPanel";
 export default function OverviewPanel({
   stat,
   datasetAvailable,
   limits,
-  entries,
+  live,
   navigate,
 }: {
   stat: Meta["stats"] | undefined;
   datasetAvailable: boolean;
   limits: Limits | undefined;
-  entries: Entry[];
+  // False while the ranking is frozen: the board then stays still.
+  live: boolean;
   navigate: (tab: string) => void;
 }) {
+  // Every ranked team, kept live like the Leaderboard tab.
+  const { data: board } = useLeaderboard("public", live);
   return (
     <>
       <div className="overview-grid">
@@ -246,7 +250,7 @@ export default function OverviewPanel({
           View full leaderboard <ArrowRight size={15} />
         </button>
       </div>
-      <LeaderboardTable entries={entries} preview />
+      <LeaderboardTable entries={board?.entries ?? null} live={live} />
       <div className="about-banner">
         <div className="about-logo">
           <img src="/admin-logo.png" alt="ADMIN" />
