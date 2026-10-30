@@ -24,6 +24,14 @@ export default function PasswordModal({
       setError("새 비밀번호와 확인이 서로 다릅니다.");
       return;
     }
+    // One account per team, so a change signs the rest of the team out. The notice above
+    // says so, but the click that does it is worth confirming.
+    if (
+      !confirm(
+        `${user.team_name} 팀의 비밀번호를 바꿉니다. 지금 로그인해 있는 팀원은 모두 로그아웃되고, 새 비밀번호를 알려 주기 전에는 다시 들어오지 못합니다. 바꿀까요?`,
+      )
+    )
+      return;
     setBusy(true);
     setError("");
     try {
