@@ -23,10 +23,11 @@ def login(body: Login, request: Request, response: Response, db=Depends(get_db))
         # Organizer IDs are never locked out of signing in.
         user = admin if verify(body.password, admin.password_hash) else None
     else:
-        # The site sits behind one proxy address, so the per-address bucket is generous
-        # and guessing is limited per team instead. This holds for the organizers' team
-        # name too; their own ID above stays open if it runs out.
-        rate_limit(db, "auth:" + request.client.host, 60)
+        # The site sits behind one proxy address, so every sign-in on the site shares this
+        # bucket. It is sized for the whole field (about 20 teams of 3-4) signing in at the
+        # start, and guessing is limited per team instead. This holds for the organizers'
+        # team name too; their own ID above stays open if it runs out.
+        rate_limit(db, "auth:" + request.client.host, 120)
         user = team_account(db, name, body.password)
         if not user:
             # Only a wrong password fills the team's bucket, and the right one is never

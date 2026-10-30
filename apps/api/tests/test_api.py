@@ -246,9 +246,18 @@ def test_a_team_cannot_be_locked_out_by_someone_elses_wrong_passwords(client, pa
     assert allowed.status_code == 200 and allowed.json()["team_name"] == name
 
 
+def test_every_sign_in_on_the_site_shares_one_bucket(client, monkeypatch):
+    """Behind the proxy every request has one address, so all teams share 120 a minute."""
+    stop_the_clock(monkeypatch)
+    for number in range(120):
+        assert client.post("/api/auth/login", json={"username": f"team {number}", "password": "NotCorrect123"}).status_code == 401
+    refused = client.post("/api/auth/login", json={"username": "another team", "password": "NotCorrect123"})
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited"
+
+
 def test_organizer_login_is_never_rate_limited(client, organizer, monkeypatch):
     stop_the_clock(monkeypatch)
-    for _ in range(70):
+    for _ in range(130):
         assert client.post("/api/auth/login", json={"username": "organizer", "password": "NotCorrect123"}).status_code == 401
     assert client.post("/api/auth/login", json={"username": "organizer", "password": "longpassword123"}).status_code == 200
 
