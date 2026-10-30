@@ -4,6 +4,7 @@ import { ShieldCheck } from "lucide-react";
 import type { Settings, User } from "../types";
 import AccountsSection from "./admin/AccountsSection";
 import AuditSection from "./admin/AuditSection";
+import AwardsSection from "./admin/AwardsSection";
 import DatasetSection from "./admin/DatasetSection";
 import SettingsSection from "./admin/SettingsSection";
 import SubmissionsSection from "./admin/SubmissionsSection";
@@ -12,6 +13,7 @@ const SECTIONS = [
   ["overview", "현황·설정"],
   ["accounts", "팀·계정"],
   ["submissions", "제출·대기열"],
+  ["awards", "특별상"],
   ["dataset", "데이터"],
   ["audit", "조작 기록"],
 ] as const;
@@ -65,6 +67,7 @@ export default function AdminPanel({
           {section === "submissions" && (
             <SubmissionsSection finalized={finalized} onChanged={onChanged} />
           )}
+          {section === "awards" && <AwardsSection finalized={finalized} />}
           {section === "dataset" && <DatasetSection onChanged={onChanged} />}
           {section === "audit" && <AuditSection />}
         </>

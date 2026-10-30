@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app import files, reset, storage
 from app.config import WORKER_STALE_SECONDS
 from app.evaluators.mock import MockEvaluator
-from app.models import AuditLog, LeaderboardEntry, Settings, Submission, SubmissionFile, Team, User, Worker, now
+from app.models import AuditLog, LeaderboardEntry, Settings, SpecialAward, Submission, SubmissionFile, Team, User, Worker, now
 from app.worker import process_one
 from conftest import login, make_zip, upload
 
@@ -39,6 +39,8 @@ def test_reset_deletes_results_and_the_next_competition_starts_clean(client, db,
     client.cookies.set("admin_session", organizer)
     assert client.patch("/api/admin/competition", json={"is_open": False, "frozen": True}).status_code == 200
     assert client.post("/api/admin/leaderboard/finalize").status_code == 200
+    award = {"team_id": participant["team_id"], "board": "final"}
+    assert client.post("/api/admin/awards/efficiency", json=award).status_code == 200
     assert db.scalars(select(Worker)).all() and len(db.scalars(select(AuditLog)).all()) >= 2
 
     response = client.post("/api/admin/competition/reset", json=CONFIRM)
@@ -46,12 +48,12 @@ def test_reset_deletes_results_and_the_next_competition_starts_clean(client, db,
     result = response.json()
     # One team: its Public and final (private) entries.
     assert (result["submissions"], result["files"], result["leaderboard_entries"], result["not_deleted"]) == (2, 2, 2, [])
-    assert result["previous"]["finalized"] is True and result["audit_entries"] >= 2
+    assert result["previous"]["finalized"] is True and result["audit_entries"] >= 2 and result["special_awards"] == 1
     settings = result["settings"]
     assert not (settings["is_open"] or settings["frozen"] or settings["finalized"])
     assert settings["start_time"] is None and settings["end_time"] is None
     assert settings["team_submission_limit"] == 20  # policies are kept
-    for model in [Submission, SubmissionFile, LeaderboardEntry, Worker]:
+    for model in [Submission, SubmissionFile, LeaderboardEntry, SpecialAward, Worker]:
         assert db.scalars(select(model)).all() == []
     # The ZIPs are gone from disk with any orphan and stale upload; nothing was kept aside.
     assert len(keys) == 2 and not any(storage.path_for(key).exists() for key in keys)

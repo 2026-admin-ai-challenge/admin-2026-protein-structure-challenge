@@ -154,7 +154,7 @@
 | --- | --- |
 | `GET /admin/overview` | 설정 전체, 대기열 건수, 실패 코드별 건수, worker 상태 |
 | `PATCH /admin/competition` | `is_open`, `start_time`, `end_time`, `team_submission_limit`, `count_failed`, `final_selection`, `frozen` |
-| `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
+| `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·특별상 기록·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`special_awards`, `audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
 | `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
 | `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경 |
 | `POST /admin/users` `{"team_id","username"?,"display_name"?}` | 계정 발급. `username`을 빼면 랜덤 10자리, `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴 |
@@ -170,6 +170,9 @@
 | `PATCH /admin/submissions/{id}` `{"counted"}` | 제출 횟수 복구·차감 |
 | `POST /admin/leaderboard/recalculate` | 저장된 점수로 Public 순위 다시 만들기 |
 | `POST /admin/leaderboard/finalize` | 최종 순위 공개. 대회가 닫혀 있고 대기열이 비어야 함 |
+| `GET /admin/awards?board=public\|final` | 특별상 계산표 `efficiency`(성능 대비 ZIP 용량: 점수·용량을 min-max로 0.01~1에 맞춘 `score_scaled ÷ size_scaled`)와 `climb`(첫 점수가 나온 순간 그 순위표에서의 순위 `rank_then` − 지금 순위 `rank`), 기록된 수상팀 `recorded`. `final`은 최종 공개 뒤에만(그 전엔 409) |
+| `POST /admin/awards/{efficiency\|climb}` `{"team_id","board"}` | 그 팀을 수상팀으로 기록. 서버가 표를 다시 계산해 그 팀의 줄을 `detail`로 저장하고, 다시 기록하면 바꿈. 표에 없는 팀, 순위가 오르지 않은 팀(`climb`)은 409 |
+| `POST /admin/awards/{kind}/delete` | 수상 기록 삭제 |
 | `GET /admin/dataset` · `POST /admin/dataset/approve` · `/verify` · `/lock` `{"locked"}` | 데이터 버전 확인·승인·변경 검사·잠금 |
 | `GET /admin/audit?limit=` | 조작 기록 |
 

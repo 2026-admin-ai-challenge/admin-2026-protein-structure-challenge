@@ -1,8 +1,8 @@
 """Clearing a finished competition so the same site can host the next one.
 
-Submissions, their ZIPs, both leaderboards, the audit log and worker status are deleted
-for good and numbering starts again from 1; nothing is kept aside, so organizers back up
-first if they need them. Teams, accounts, policies and dataset approval stay.
+Submissions, their ZIPs, both leaderboards, recorded special awards, the audit log and worker
+status are deleted for good and numbering starts again from 1; nothing is kept aside, so
+organizers back up first if they need them. Teams, accounts, policies and dataset approval stay.
 """
 import time
 from datetime import timedelta
@@ -11,11 +11,11 @@ from sqlalchemy import delete, func, select, text
 
 from . import files, storage
 from .config import SUBMISSION_DIR, WORKER_STALE_SECONDS
-from .models import AuditLog, LeaderboardEntry, RateBucket, Submission, SubmissionFile, Worker, now
+from .models import AuditLog, LeaderboardEntry, RateBucket, SpecialAward, Submission, SubmissionFile, Worker, now
 
 CONFIRM_PHRASE = "초기화"
 # Children before parents: leaderboard entries and file records point at submissions.
-TABLES = [LeaderboardEntry, SubmissionFile, Submission, AuditLog, Worker, RateBucket]
+TABLES = [LeaderboardEntry, SubmissionFile, Submission, SpecialAward, AuditLog, Worker, RateBucket]
 
 
 def scoring_now(db):
@@ -30,6 +30,7 @@ def clear(db, settings):
     summary = {"submissions": db.scalar(select(func.count(Submission.id))),
                "files": db.scalar(select(func.count(SubmissionFile.id)).where(SubmissionFile.deleted_at.is_(None))),
                "leaderboard_entries": db.scalar(select(func.count(LeaderboardEntry.id))),
+               "special_awards": db.scalar(select(func.count(SpecialAward.kind))),
                "audit_entries": db.scalar(select(func.count(AuditLog.id))),
                "previous": {key: getattr(settings, key) for key in ["start_time", "end_time", "frozen", "finalized"]}}
     if db.bind.dialect.name == "postgresql":

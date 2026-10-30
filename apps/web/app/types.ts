@@ -170,6 +170,49 @@ export type DatasetReport = {
     locked: boolean;
   };
 };
+export type AwardKind = "efficiency" | "climb";
+export type AwardBoard = "public" | "final";
+type AwardRow = {
+  // Order within the award table; rank is the team's place on the board.
+  place: number;
+  team_id: number;
+  team: string;
+  rank: number;
+  score: number;
+  value: number;
+};
+export type EfficiencyRow = AwardRow & {
+  submission_id: number;
+  size_bytes: number;
+  score_scaled: number;
+  size_scaled: number;
+};
+export type ClimbRow = AwardRow & {
+  first_submission_id: number;
+  first_at: string;
+  score_then: number;
+  rank_then: number;
+  teams_then: number;
+};
+export type RecordedAward = {
+  kind: AwardKind;
+  board: AwardBoard;
+  team_id: number;
+  team: string;
+  value: number;
+  // The team's row when it was recorded.
+  detail: EfficiencyRow | ClimbRow;
+  recorded_by: string;
+  recorded_at: string;
+};
+export type Awards = {
+  board: AwardBoard;
+  finalized: boolean;
+  frozen: boolean;
+  efficiency: EfficiencyRow[];
+  climb: ClimbRow[];
+  recorded: Record<AwardKind, RecordedAward | null>;
+};
 export type AuditEntry = {
   id: number;
   created_at: string;

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 
 // Loads one admin resource and exposes a guarded action runner, so every section
@@ -10,20 +10,26 @@ export function useAdminData<T>(path: string) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
+  // A response that arrives after the path changed (a filter or board switched while it
+  // was loading) is dropped, so it cannot replace the newer one.
+  const latest = useRef(path);
   const reload = useCallback(async () => {
     try {
-      setData(await api<T>(path));
+      const result = await api<T>(path);
+      if (latest.current !== path) return;
+      setData(result);
       setError("");
     } catch (e) {
-      setError((e as Error).message);
+      if (latest.current === path) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (latest.current === path) setLoading(false);
     }
   }, [path]);
   useEffect(() => {
+    latest.current = path;
     setLoading(true);
     reload();
-  }, [reload]);
+  }, [path, reload]);
   const run = useCallback(
     async <R,>(action: () => Promise<R>, done?: string) => {
       setBusy(true);
