@@ -147,6 +147,30 @@ def test_account_sheet_is_the_editable_source_of_truth(db):
     assert log and all("Pass" not in (entry.detail or "") for entry in log)
 
 
+def test_the_sheet_rehashes_passwords_left_on_the_old_parameters(db):
+    """Accounts issued before the argon2 settings changed cost the old, slower hash at
+    every sign-in until the sheet is run again."""
+    from argon2 import PasswordHasher
+    from app.security import hasher
+
+    slow = PasswordHasher(time_cost=3, memory_cost=64 * 1024, parallelism=4)
+    sheet = "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\n"
+    sync_sheet(db, sheet)
+    user = db.scalar(select(User).where(User.username == "abcdefgh23"))
+    user.password_hash = slow.hash("First-Pass-123")
+    db.commit()
+    # The old hash still signs in: argon2 keeps the parameters inside the hash itself.
+    assert verify("First-Pass-123", user.password_hash)
+    assert hasher.check_needs_rehash(user.password_hash)
+
+    assert sync_sheet(db, sheet)["updated"] == 1
+    db.commit()
+    assert not hasher.check_needs_rehash(user.password_hash)
+    assert verify("First-Pass-123", user.password_hash)
+    # Nothing left to do on the next run.
+    assert sync_sheet(db, sheet)["unchanged"] == 1
+
+
 def test_sheet_team_names_match_like_sign_in(db):
     sync_sheet(db, "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\n")
     team_id = db.scalar(select(User.team_id).where(User.username == "abcdefgh23"))
