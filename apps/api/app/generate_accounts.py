@@ -1,4 +1,4 @@
-"""Writes a new account sheet with random 10-character IDs and temporary passwords.
+"""Writes a new account sheet: team names and a temporary password for each.
 
     python -m app.generate_accounts --count 10 --out accounts/participants.csv
 

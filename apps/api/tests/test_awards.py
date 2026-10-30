@@ -15,10 +15,10 @@ def board(client, name="public"):
 
 
 def test_efficiency_scales_score_and_zip_size_into_one_hundredth_to_one(client, db, organizer):
-    best = add_account(db, "Best score", "bestscore")
-    small = add_account(db, "Smallest zip", "smallestzip")
-    worst = add_account(db, "Worst score", "worstscore")
-    no_zip = add_account(db, "No zip record", "nozip")
+    best = add_account(db, "Best score")
+    small = add_account(db, "Smallest zip")
+    worst = add_account(db, "Worst score")
+    no_zip = add_account(db, "No zip record")
     scored(db, best, 0.9, 0.9, zip_bytes=1000)
     scored(db, small, 0.5, 0.5, zip_bytes=100)
     scored(db, worst, 0.1, 0.1, zip_bytes=10000)
@@ -37,9 +37,9 @@ def test_efficiency_scales_score_and_zip_size_into_one_hundredth_to_one(client, 
 
 
 def test_climb_counts_from_the_rank_when_the_first_score_came_in(client, db, organizer):
-    early = add_account(db, "Early", "earlyteam")
-    middle = add_account(db, "Middle", "middleteam")
-    late = add_account(db, "Late", "lateteam")
+    early = add_account(db, "Early")
+    middle = add_account(db, "Middle")
+    late = add_account(db, "Late")
     scored(db, early, 0.5, 0.1, seconds=0)    # 1st of 1
     scored(db, middle, 0.6, 0.8, seconds=10)  # 1st of 2
     first = scored(db, late, 0.2, 0.3, seconds=20)  # 3rd of 3
@@ -67,8 +67,8 @@ def test_climb_counts_from_the_rank_when_the_first_score_came_in(client, db, org
 
 def test_organizers_test_models_never_take_part(client, db, organizer):
     admin = db.scalar(select(User).where(User.role == "ADMIN"))
-    first = add_account(db, "First", "firstteam")
-    second = add_account(db, "Second", "secondteam")
+    first = add_account(db, "First")
+    second = add_account(db, "Second")
     # The best score and the smallest ZIP: it would win both awards if it took part.
     scored(db, {"id": admin.id, "team_id": admin.team_id}, 0.99, 0.99, seconds=30, zip_bytes=10)
     scored(db, first, 0.8, 0.8, seconds=0, zip_bytes=1000)
@@ -84,8 +84,8 @@ def test_organizers_test_models_never_take_part(client, db, organizer):
 
 
 def test_recording_a_winner_keeps_the_numbers_it_was_decided_on(client, db, participant, organizer):
-    climber = add_account(db, "Climber", "climberteam")
-    other = add_account(db, "Other", "otherteam")
+    climber = add_account(db, "Climber")
+    other = add_account(db, "Other")
     scored(db, participant, 0.5, 0.5, seconds=0, zip_bytes=500)
     scored(db, other, 0.6, 0.6, seconds=10, zip_bytes=5000)
     scored(db, climber, 0.1, 0.1, seconds=20)

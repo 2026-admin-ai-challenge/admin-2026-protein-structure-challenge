@@ -10,7 +10,8 @@ export type Entry = {
 };
 export type User = {
   id: number;
-  username: string;
+  // An organizer's own sign-in ID. Null for participants, who sign in with the team name.
+  username: string | null;
   display_name: string;
   team_id: number;
   team_name: string;
@@ -45,7 +46,8 @@ export type AdminSubmission = Submission & {
   private_score: number | null;
   team_id: number;
   team: string;
-  user: string;
+  // Organizer ID for organizers' test runs; null for a participant team's one account.
+  user: string | null;
   attempts: number;
   worker_id: string | null;
   file_id: number | null;
@@ -113,7 +115,8 @@ export type Competition = {
 };
 export type Account = {
   id: number;
-  username: string;
+  // Organizer ID; null for participant accounts, which have none.
+  username: string | null;
   display_name: string;
   role: string;
   banned: boolean;
@@ -127,7 +130,7 @@ export type IssuedAccount = Account & {
 // What POST /admin/teams/{id}/delete removed. not_deleted: ZIPs left on disk, with the reason.
 export type DeletedTeam = {
   name: string;
-  accounts: string[];
+  accounts: number;
   submissions: number;
   files: number;
   not_deleted: string[];

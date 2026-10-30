@@ -4,9 +4,10 @@ r"""Loads the organizer account sheet into the database.
     python -m app.sync_accounts accounts/participants.csv --exclusive
     cmd /c "docker compose exec -T api python -m app.sync_accounts < accounts\participants.csv"   (Windows PowerShell)
 
-The sheet (team_name, username, password, display_name) is the editable source of truth
-for participant logins: edit a row and run this again. Only password hashes are stored.
-Participants sign in with team_name and password; username is the account's internal ID.
+The sheet (team_name, password), one row per team, is the editable source of truth for
+participant logins: edit a row and run this again. Only password hashes are stored.
+Participants sign in with team_name and password; there is no separate ID. Rename teams
+on the admin page: a renamed row reads as a new team.
 `--exclusive` blocks every participant account that is not in the sheet.
 """
 import argparse

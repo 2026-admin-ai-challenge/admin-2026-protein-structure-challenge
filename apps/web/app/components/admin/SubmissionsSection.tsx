@@ -90,7 +90,7 @@ export default function SubmissionsSection({
           </select>
         </label>
         <label>
-          검색 (팀·아이디·파일·접수 ID)
+          검색 (팀·파일·접수 ID)
           <input value={search} onChange={(e) => setSearch(e.target.value)} />
         </label>
         <button className="btn secondary">검색</button>
@@ -178,7 +178,9 @@ export default function SubmissionsSection({
                 </td>
                 <td>
                   {s.team}
-                  <small className="row-error muted">{s.user}</small>
+                  {s.user && (
+                    <small className="row-error muted">{s.user}</small>
+                  )}
                 </td>
                 <td>
                   {s.filename}

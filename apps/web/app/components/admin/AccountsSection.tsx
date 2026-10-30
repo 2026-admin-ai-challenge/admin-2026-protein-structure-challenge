@@ -23,8 +23,7 @@ export default function AccountsSection({
   useEffect(() => {
     if (issued) box.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [issued]);
-  // No username is sent, so the server picks the account's internal ID. The team signs
-  // in with its name; accounts of one team are told apart by password.
+  // A team signs in with its name and this password; it gets one account, and has no ID.
   const issue = (teamId: number) =>
     run(async () => {
       setIssued(await send<IssuedAccount>("/admin/users", { team_id: teamId }));
@@ -51,7 +50,7 @@ export default function AccountsSection({
       (deleted) =>
         deleted.not_deleted.length
           ? `팀 "${deleted.name}"을 삭제했습니다. ZIP ${deleted.not_deleted.length}개는 디스크에서 지우지 못했습니다. 제출·대기열의 파일 정합성 검사로 확인하세요.`
-          : `팀 "${deleted.name}"과 계정 ${deleted.accounts.length}개, 제출 ${deleted.submissions}건을 삭제했습니다.`,
+          : `팀 "${deleted.name}"과 계정 ${deleted.accounts}개, 제출 ${deleted.submissions}건을 삭제했습니다.`,
     );
   };
   return (
@@ -72,7 +71,7 @@ export default function AccountsSection({
             재설정으로 새 비밀번호를 발급합니다.
           </p>
           <dl>
-            <dt>아이디 (팀 이름)</dt>
+            <dt>팀 이름</dt>
             <dd>{issued.team_name}</dd>
             <dt>임시 비밀번호</dt>
             <dd>{issued.temporary_password}</dd>
@@ -81,7 +80,7 @@ export default function AccountsSection({
             className="btn secondary compact"
             onClick={() =>
               navigator.clipboard?.writeText(
-                `아이디(팀 이름): ${issued.team_name}\n비밀번호: ${issued.temporary_password}`,
+                `팀 이름: ${issued.team_name}\n비밀번호: ${issued.temporary_password}`,
               )
             }
           >
@@ -119,7 +118,6 @@ export default function AccountsSection({
               <th>Accounts</th>
               <th>제출 횟수</th>
               <th>Best Public</th>
-              <th>계정 발급</th>
             </tr>
           </thead>
           <tbody>
@@ -166,13 +164,19 @@ export default function AccountsSection({
                   )}
                 </td>
                 <td>
-                  {team.users.map((u) => (
+                  {team.users.map((u, i) => (
                     <div className="account-row" key={u.id}>
-                      <code>{u.username}</code>
                       {u.role === "ADMIN" ? (
-                        <span className="status-pill succeeded">ADMIN</span>
+                        <>
+                          <code>{u.username}</code>
+                          <span className="status-pill succeeded">ADMIN</span>
+                        </>
                       ) : (
                         <>
+                          {/* Only a team given a second account before teams had one. */}
+                          {team.users.length > 1 && (
+                            <span className="muted">계정 {i + 1}</span>
+                          )}
                           {u.banned && (
                             <span className="status-pill failed">차단됨</span>
                           )}
@@ -182,7 +186,7 @@ export default function AccountsSection({
                             onClick={() => {
                               if (
                                 confirm(
-                                  `${u.username}의 비밀번호를 재설정할까요? 기존 비밀번호와 로그인 세션은 즉시 무효가 됩니다.`,
+                                  `팀 "${team.name}"의 비밀번호를 재설정할까요? 기존 비밀번호와 로그인 세션은 즉시 무효가 됩니다.`,
                                 )
                               )
                                 run(async () =>
@@ -219,7 +223,15 @@ export default function AccountsSection({
                       )}
                     </div>
                   ))}
-                  {!team.users.length && <span className="muted">계정 없음</span>}
+                  {!team.users.length && (
+                    <button
+                      className="btn secondary compact"
+                      disabled={busy}
+                      onClick={() => issue(team.id)}
+                    >
+                      계정 발급
+                    </button>
+                  )}
                 </td>
                 <td>
                   {team.used} / {team.limit}
@@ -229,15 +241,6 @@ export default function AccountsSection({
                   </small>
                 </td>
                 <td className="score">{team.best_public?.toFixed(5) ?? "—"}</td>
-                <td>
-                  <button
-                    className="btn secondary compact"
-                    disabled={busy}
-                    onClick={() => issue(team.id)}
-                  >
-                    {team.users.length ? "계정 추가 발급" : "계정 발급"}
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>
@@ -250,11 +253,13 @@ export default function AccountsSection({
         )}
       </div>
       <p className="muted">
-        모든 계정은 팀 이름을 아이디로, 배부된 비밀번호로 로그인합니다(대소문자·띄어쓰기
-        구분 없음). 운영진은 관리자 아이디로도 로그인할 수 있습니다. 계정 옆의 코드는 내부 구분용이며 로그인에는 쓰지 않습니다. 한
-        팀에 계정이 여럿이면 비밀번호로 구분합니다. 여러 계정을 한꺼번에 만들거나
-        고칠 때는 서버의 accounts/participants.csv를 수정한 뒤 sync_accounts 명령을
-        실행하세요. 비밀번호는 해시로만 저장됩니다.
+        팀마다 계정이 하나이며, 팀 이름과 배부된 비밀번호로
+        로그인합니다(대소문자·띄어쓰기 구분 없음). 따로 아이디는 없습니다.
+        운영진은 관리자 아이디로도 로그인할 수 있습니다. 여러 팀을 한꺼번에
+        만들거나 비밀번호를 바꿀 때는 서버의
+        accounts/participants.csv(team_name, password)를 수정한 뒤 sync_accounts
+        명령을 실행하세요. 팀 이름 변경은 이 화면에서 합니다. 비밀번호는
+        해시로만 저장됩니다.
       </p>
     </>
   );

@@ -26,7 +26,8 @@ class Team(Base):
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Login ID issued by organizers. Participants cannot register.
+    # An organizer's sign-in ID. Participants sign in with their team name, so theirs is a
+    # random internal value that is never shown. Nobody can register.
     username: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(60))
@@ -35,6 +36,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(10), default="USER")
     banned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # When the team last chose its own password; None while it is the one organizers issued.
+    # A sheet sync leaves a team's own password alone.
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Competition(Base):

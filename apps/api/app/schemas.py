@@ -27,6 +27,12 @@ class Login(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    # The minimum length is checked by the route, which can say it in Korean.
+    new_password: str = Field(min_length=1, max_length=128)
+
+
 class TeamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=60)
 
@@ -38,14 +44,7 @@ class TeamCreate(BaseModel):
 
 class UserCreate(BaseModel):
     team_id: int
-    # Omitted username: the server generates a random 10-character ID.
-    username: str | None = Field(default=None, max_length=64)
     display_name: str | None = Field(default=None, max_length=60)
-
-    @field_validator("username")
-    @classmethod
-    def valid_username(cls, v):
-        return clean_username(v) if v else None
 
     @field_validator("display_name")
     @classmethod

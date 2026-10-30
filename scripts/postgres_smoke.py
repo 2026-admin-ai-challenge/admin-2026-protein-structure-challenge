@@ -64,17 +64,17 @@ try:
         assert client.post('/api/auth/login',json={'username':'test-admin','password':'Test-Admin-Password-42'}).status_code==200
         organizer_cookie=client.cookies.get('admin_session')
         team_id=client.post('/api/admin/teams',json={'name':'Integration Test Team'}).json()['id']
-        accounts=[client.post('/api/admin/users',json={'team_id':team_id}).json() for _ in range(2)]
-        assert len({a['username'] for a in accounts})==2 and all(len(a['username'])==10 for a in accounts)
+        issued=client.post('/api/admin/users',json={'team_id':team_id}).json()
+        assert issued['username'] is None and client.post('/api/admin/users',json={'team_id':team_id}).status_code==409
         window={'start_time':(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat(),'end_time':(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()}
         assert client.patch('/api/admin/competition',json={'is_open':True,'team_submission_limit':1,**window}).status_code==200
         cookies=[]
-        for account in accounts:
+        for _ in range(2):
             with TestClient(app,base_url="https://testserver",headers=HEADERS) as session:
-                assert session.post('/api/auth/login',json={'username':account['username'],'password':account['temporary_password']}).status_code==200
+                assert session.post('/api/auth/login',json={'username':'integration test team','password':issued['temporary_password']}).status_code==200
                 cookies.append(session.cookies.get('admin_session'))
         assert client.cookies.set('admin_session',cookies[0]) is None and client.get('/api/admin/teams').status_code==403
-        # Two accounts of the same team submit at the same moment: exactly one is accepted.
+        # The team signs in on two devices that submit at the same moment: exactly one is accepted.
         def concurrent_submission(index):
             with TestClient(app,base_url="https://testserver",headers=HEADERS) as parallel:
                 parallel.cookies.set('admin_session',cookies[index])
@@ -99,7 +99,7 @@ try:
         assert client.post('/api/admin/leaderboard/finalize').status_code==200
         assert len(client.get('/api/leaderboard?board=final').json()['entries'])==1
         assert client.patch('/api/admin/competition',json={'is_open':True}).status_code==409
-        assert len(client.get('/api/admin/audit').json())>=6
+        assert {'team.create','user.create','settings.update','leaderboard.finalize'}<={e['action'] for e in client.get('/api/admin/audit').json()}
         assert client.get('/openapi.json').status_code==200
         print('PASS: PostgreSQL 0001->0003 migration with prototype data, file records, issued accounts, ZIP intake, concurrent team limit, queue worker, leaderboard, private-score protection, close/finalize, audit log and OpenAPI.')
         print('Mock public score:',history['entries'][0]['public_score'])

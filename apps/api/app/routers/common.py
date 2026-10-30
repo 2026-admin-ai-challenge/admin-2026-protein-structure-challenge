@@ -29,8 +29,13 @@ def used_attempts(db, team_id):
     return db.scalar(select(func.count(Submission.id)).where(Submission.team_id == team_id, Submission.counted.is_(True)))
 
 
+def admin_id(user):
+    """An organizer's own sign-in ID. A participant has none: the team name is the sign-in."""
+    return user.username if user.role == "ADMIN" else None
+
+
 def user_view(user, db):
-    return {"id": user.id, "username": user.username, "display_name": user.display_name,
+    return {"id": user.id, "username": admin_id(user), "display_name": user.display_name,
             "team_id": user.team_id, "team_name": db.get(Team, user.team_id).name, "role": user.role}
 
 

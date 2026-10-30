@@ -54,7 +54,7 @@ export default function AuthModal({
         </button>
         <div className="section-kicker">WELCOME TO THE CHALLENGE</div>
         <h2 id="auth-title">Welcome back.</h2>
-        <p>팀 이름을 아이디로, 운영진에게 받은 비밀번호로 로그인하세요.</p>
+        <p>팀 이름과 운영진에게 받은 비밀번호로 로그인하세요.</p>
         <form onSubmit={submit}>
           <label>
             팀 이름
