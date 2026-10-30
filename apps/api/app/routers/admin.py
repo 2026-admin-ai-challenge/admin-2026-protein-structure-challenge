@@ -4,7 +4,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from .. import files, reset, storage
@@ -18,11 +18,14 @@ from ..models import AuditLog, LeaderboardEntry, Settings, Submission, Submissio
 from ..schemas import (BanPatch, CompetitionReset, CountedPatch, FileDelete, LockPatch, SettingsPatch, TeamCreate,
                        TeamDelete, UserCreate)
 from ..security import admin_user, hasher
-from .common import (PENDING, admin_settings_view, evaluator_name, limits_view, queue_positions, submission_view,
-                     used_attempts)
+from .common import (PENDING, admin_id, admin_settings_view, evaluator_name, limits_view, queue_positions,
+                     submission_view, used_attempts)
 
 router = APIRouter(prefix="/api/admin")
 WORKER_ALIVE_SECONDS = 60
+# Who uploaded, in SQL: an organizer's ID tells their test runs apart, and a participant
+# team's one account has no ID to show.
+UPLOADER = case((User.role == "ADMIN", User.username))
 
 
 def locked_settings(db):
@@ -30,7 +33,7 @@ def locked_settings(db):
 
 
 def account_view(user):
-    return {"id": user.id, "username": user.username, "display_name": user.display_name,
+    return {"id": user.id, "username": admin_id(user), "display_name": user.display_name,
             "role": user.role, "banned": user.banned, "created_at": user.created_at}
 
 
@@ -206,16 +209,16 @@ def delete_team(id: int, body: TeamDelete, admin=Depends(admin_user), db=Depends
 
 @router.post("/users", status_code=201)
 def issue_account(body: UserCreate, admin=Depends(admin_user), db=Depends(get_db)):
-    """Creates a participant account. The temporary password is returned once and only its hash is stored."""
-    team = db.get(Team, body.team_id)
+    """Creates a team's account. The temporary password is returned once and only its hash is stored."""
+    # Locked so that two clicks cannot give one team two accounts.
+    team = db.get(Team, body.team_id, with_for_update=True)
     if not team:
         raise HTTPException(404, "팀이 없습니다.")
-    try:
-        user, password = create_user(db, team, body.username, body.display_name)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(409, "이미 사용 중인 아이디입니다.")
-    record(db, admin, "user.create", f"user:{user.username}", {"team": team.name})
+    # A team signs in with its name and one password, so it has one account.
+    if db.scalar(select(User.id).where(User.team_id == team.id).limit(1)):
+        raise HTTPException(409, "이 팀에는 이미 계정이 있습니다. 비밀번호를 잊었다면 재설정하세요.")
+    user, password = create_user(db, team, body.display_name)
+    record(db, admin, "user.create", f"user:{user.id}", {"team": team.name})
     db.commit()
     return {**account_view(user), "team_id": team.id, "team_name": team.name, "temporary_password": password}
 
@@ -229,10 +232,10 @@ def reset_password(id: int, admin=Depends(admin_user), db=Depends(get_db)):
         raise HTTPException(400, "관리자 비밀번호는 서버에서 create_admin 명령으로 재설정합니다.")
     password = random_password()
     user.password_hash = hasher.hash(password)  # also signs the account out everywhere
-    record(db, admin, "user.reset_password", f"user:{user.username}")
+    team = db.get(Team, user.team_id)
+    record(db, admin, "user.reset_password", f"user:{user.id}", {"team": team.name})
     db.commit()
-    return {**account_view(user), "team_id": user.team_id, "team_name": db.get(Team, user.team_id).name,
-            "temporary_password": password}
+    return {**account_view(user), "team_id": team.id, "team_name": team.name, "temporary_password": password}
 
 
 @router.patch("/users/{id}")
@@ -249,7 +252,8 @@ def ban(id: int, body: BanPatch, admin=Depends(admin_user), db=Depends(get_db)):
     db.flush()
     if not s.frozen:
         rebuild(db)
-    record(db, admin, "user.ban" if body.banned else "user.unban", f"user:{user.username}")
+    record(db, admin, "user.ban" if body.banned else "user.unban", f"user:{user.id}",
+           {"team": db.get(Team, user.team_id).name})
     db.commit()
     return {"ok": True}
 
@@ -257,7 +261,7 @@ def ban(id: int, body: BanPatch, admin=Depends(admin_user), db=Depends(get_db)):
 # ---- Submissions and queue ----------------------------------------------------------------
 
 def submission_query():
-    return (select(Submission, Team.name, User.username)
+    return (select(Submission, Team.name, UPLOADER)
             .join(Team, Team.id == Submission.team_id).join(User, User.id == Submission.user_id))
 
 
@@ -273,7 +277,7 @@ def all_submissions(status: str | None = None, failure_code: str | None = None, 
         query = query.where(Submission.team_id == team_id)
     if q and q.strip():
         term = q.strip()
-        conditions = [Team.name.ilike(f"%{term}%"), Submission.filename.ilike(f"%{term}%"), User.username.ilike(f"%{term}%")]
+        conditions = [Team.name.ilike(f"%{term}%"), Submission.filename.ilike(f"%{term}%"), UPLOADER.ilike(f"%{term}%")]
         if term.isdigit():
             conditions.append(Submission.id == int(term))
         query = query.where(or_(*conditions))
@@ -342,7 +346,7 @@ def set_counted(id: int, body: CountedPatch, admin=Depends(admin_user), db=Depen
 @router.get("/files")
 def list_files(team_id: int | None = None, limit: int = 500, admin=Depends(admin_user), db=Depends(get_db)):
     """Every uploaded ZIP with its owner team, plus how much each team is storing."""
-    query = (select(SubmissionFile, Team.name, User.username, Submission.status, Submission.public_score)
+    query = (select(SubmissionFile, Team.name, UPLOADER, Submission.status, Submission.public_score)
              .join(Team, Team.id == SubmissionFile.team_id).join(User, User.id == SubmissionFile.uploaded_by)
              .join(Submission, Submission.id == SubmissionFile.submission_id))
     if team_id:

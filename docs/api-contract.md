@@ -74,10 +74,10 @@
 | `GET /auth/me` | — | 사용자 |
 
 ```json
-{"id": 12, "username": "k7m2xq9rtd", "display_name": "Team 03", "team_id": 5, "team_name": "Team 03", "role": "USER"}
+{"id": 12, "username": null, "display_name": "Team 03", "team_id": 5, "team_name": "Team 03", "role": "USER"}
 ```
 
-모든 계정은 팀 이름과 배부된 비밀번호로 로그인합니다. 운영진도 운영진 팀 이름으로 로그인할 수 있습니다. 팀 이름은 대소문자와 띄어쓰기(빼고 쳐도 됨)를 구분하지 않습니다. 한 팀에 계정이 여럿이면 비밀번호로 어느 계정인지 정해지고, 차단된 계정은 맞지 않습니다. 응답의 `username`은 계정을 구분하는 내부 ID이며 참가자 로그인에는 쓰지 않습니다. 운영진은 관리자 아이디로도 로그인할 수 있고, 관리자 아이디와 같은 이름을 입력하면 관리자 로그인으로 처리합니다. 로그인 시도 제한(팀 이름별 분당 10회)은 관리자 아이디에는 걸리지 않습니다. 비밀번호를 재설정하면 그 계정의 기존 로그인은 모두 풀립니다.
+모든 계정은 팀 이름과 배부된 비밀번호로 로그인합니다. 운영진도 운영진 팀 이름으로 로그인할 수 있습니다. 팀 이름은 대소문자와 띄어쓰기(빼고 쳐도 됨)를 구분하지 않습니다. 참가 팀은 계정이 하나뿐이고 따로 아이디가 없어 응답의 `username`은 `null`입니다. 운영진 계정만 `username`에 관리자 아이디가 들어갑니다. 차단된 계정으로는 로그인할 수 없습니다. 운영진은 관리자 아이디로도 로그인할 수 있고, 관리자 아이디와 같은 이름을 입력하면 관리자 로그인으로 처리합니다. 로그인 시도 제한(팀 이름별 분당 10회)은 관리자 아이디에는 걸리지 않습니다. 비밀번호를 재설정하면 그 계정의 기존 로그인은 모두 풀립니다.
 
 ## 공개 조회
 
@@ -146,7 +146,7 @@
 - 팀 단위, 대회 전체. 날짜가 바뀌어도 복구되지 않습니다.
 - **접수된 시점에 1회 사용**합니다(`counted: true`). 접수 단계에서 거절된 업로드는 사용하지 않습니다.
 - 채점 실패 시: ZIP 규격 위반(`zip_invalid`)과 서버 오류(`system_error`)는 항상 `counted: false`입니다. 나머지 실패는 1회 차감합니다(관리자 설정 `count_failed`, 기본 켜짐. 끄면 모든 실패가 미차감).
-- 같은 팀의 여러 계정이 동시에 올려도 팀 행을 잠그고 세므로 상한을 넘지 않습니다.
+- 같은 팀이 여러 기기에서 동시에 올려도 팀 행을 잠그고 세므로 상한을 넘지 않습니다.
 - 다시 채점: 자동으로 미차감된 제출(`zip_invalid`·`system_error`, 또는 `count_failed`가 꺼져 있을 때의 실패)은 `counted: true`로 돌아가 결과에 따라 다시 판정합니다. 관리자가 횟수 복구로 `counted: false`로 만든 제출은 그대로입니다. 팀 한도는 확인하지 않습니다.
 
 ## 관리자
@@ -158,13 +158,13 @@
 | `GET /admin/overview` | 설정 전체, 대기열 건수, 실패 코드별 건수, worker 상태 |
 | `PATCH /admin/competition` | `is_open`, `start_time`, `end_time`, `team_submission_limit`, `count_failed`, `final_selection`, `frozen` |
 | `POST /admin/competition/reset` `{"confirm": "초기화"}` | 대회 초기화. 제출·파일 기록·순위·특별상 기록·조작 기록·worker 상태와 디스크의 제출 ZIP을 영구 삭제(따로 보관하지 않음), ID 번호를 1부터 다시 시작, 일정·동결·최종 공개 해제. 대회가 닫혀 있고 살아 있는 채점이 없어야 함. 응답: 지운 건수(`special_awards`, `audit_entries` 포함), 이전 상태(`previous`), 지우지 못한 ZIP(`not_deleted`), 새 설정 |
-| `GET /admin/teams` | 팀, 소속 계정, 사용 횟수, 최고 Public |
+| `GET /admin/teams` | 팀, 소속 계정(`username`은 운영진만), 사용 횟수, 최고 Public |
 | `POST /admin/teams` `{"name"}` · `PATCH /admin/teams/{id}` `{"name"}` | 팀 생성·이름 변경. 팀 이름은 로그인 아이디이므로 다른 팀과 대소문자·띄어쓰기만 다르거나 관리자 아이디와 같으면 409 |
-| `POST /admin/teams/{id}/delete` `{"confirm": "<팀 이름>"}` | 팀 영구 삭제. 소속 계정, 제출, 파일 기록과 디스크의 ZIP, 순위 항목을 함께 지움(조작 기록은 남음). 확인 문구가 팀 이름과 같아야 함(대소문자·띄어쓰기 무시, 다르면 422). 최종 공개 후, 관리자 계정이 있는 팀, 채점 중인 제출이 있는 팀은 409(대기 중인 제출은 함께 삭제). 응답: `name`, 지운 계정 ID `accounts`, `submissions`, `files`, 지우지 못한 ZIP `not_deleted` |
-| `POST /admin/users` `{"team_id","username"?,"display_name"?}` | 계정 발급. `username`(내부 ID)을 빼면 랜덤 10자리, `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴. 로그인은 응답의 `team_name`으로 함 |
+| `POST /admin/teams/{id}/delete` `{"confirm": "<팀 이름>"}` | 팀 영구 삭제. 소속 계정, 제출, 파일 기록과 디스크의 ZIP, 순위 항목을 함께 지움(조작 기록은 남음). 확인 문구가 팀 이름과 같아야 함(대소문자·띄어쓰기 무시, 다르면 422). 최종 공개 후, 관리자 계정이 있는 팀, 채점 중인 제출이 있는 팀은 409(대기 중인 제출은 함께 삭제). 응답: `name`, 지운 계정 수 `accounts`, `submissions`, `files`, 지우지 못한 ZIP `not_deleted` |
+| `POST /admin/users` `{"team_id","display_name"?}` | 팀 계정 발급. 팀당 하나이며 이미 계정이 있는 팀은 409(비밀번호를 잊었으면 재설정). `display_name`을 빼면 팀 이름. 응답의 `temporary_password`는 **이때만** 나옴. 로그인은 응답의 `team_name`으로 함 |
 | `POST /admin/users/{id}/reset-password` | 새 임시 비밀번호 발급. 응답에 `team_id`, `team_name` 포함 |
 | `PATCH /admin/users/{id}` `{"banned"}` | 차단·해제 |
-| `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함 |
+| `GET /admin/submissions?status=&failure_code=&team_id=&q=&limit=` | 제출 목록. Private 점수 포함. `user`는 운영진이 낸 제출의 관리자 아이디, 참가 팀이면 `null` |
 | `GET /admin/submissions/{id}` | 상세 + `log_tail` + ZIP 보관 여부, 파일 삭제 기록 |
 | `GET /admin/files?team_id=` | 저장된 ZIP 목록과 팀별 보관 개수·용량 |
 | `GET /admin/files/{id}/download` | ZIP 내려받기(재현 심사용). 조작 기록에 남음 |

@@ -35,7 +35,7 @@ def login(body: Login, request: Request, response: Response, db=Depends(get_db))
             # with ten wrong passwords a minute. Guessing is still limited to ten a minute.
             rate_limit(db, "auth-team:" + team_key(name), 10)
     if not user or user.banned:
-        raise HTTPException(401, "팀 이름(아이디) 또는 비밀번호를 확인하세요.")
+        raise HTTPException(401, "팀 이름 또는 비밀번호를 확인하세요.")
     response.set_cookie("admin_session", token_for(user), httponly=True, secure=COOKIE_SECURE,
                         samesite="lax", max_age=43200, path="/")
     return user_view(user, db)

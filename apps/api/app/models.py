@@ -26,7 +26,8 @@ class Team(Base):
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Login ID issued by organizers. Participants cannot register.
+    # An organizer's sign-in ID. Participants sign in with their team name, so theirs is a
+    # random internal value that is never shown. Nobody can register.
     username: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(60))

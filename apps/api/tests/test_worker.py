@@ -394,8 +394,8 @@ def test_ban_removes_team_from_board(client, db, participant, organizer):
 
 
 def test_ties_go_to_the_earlier_submission_and_teams_appear_once(client, db, participant):
-    mate = add_account(db, participant["team_name"], "teammate")
-    other = add_account(db, "Other team", "otherteam")
+    mate = add_account(db, participant["team_name"])
+    other = add_account(db, "Other team")
     scored(db, participant, 0.8, 0.5, seconds=5)
     scored(db, other, 0.8, 0.5, seconds=1)
     scored(db, mate, 0.7, 0.5, seconds=2)
@@ -409,7 +409,7 @@ def test_ties_go_to_the_earlier_submission_and_teams_appear_once(client, db, par
 
 def test_organizer_submissions_never_take_a_rank(client, db, participant, organizer):
     admin = db.scalar(select(User).where(User.role == "ADMIN"))
-    other = add_account(db, "Other team", "otherteam")
+    other = add_account(db, "Other team")
     test_model = scored(db, {"id": admin.id, "team_id": admin.team_id}, 0.99, 0.99, seconds=1)
     scored(db, participant, 0.7, 0.5, seconds=2)
     scored(db, other, 0.6, 0.4, seconds=3)
@@ -427,9 +427,9 @@ def test_organizer_submissions_never_take_a_rank(client, db, participant, organi
 
 
 def test_teams_without_a_score_are_listed_after_the_ranked_ones(client, db, participant, organizer):
-    add_account(db, "Quiet team", "quietteam")
-    add_account(db, "Another quiet", "anotherquiet")
-    banned = add_account(db, "Banned team", "bannedteam")
+    add_account(db, "Quiet team")
+    add_account(db, "Another quiet")
+    banned = add_account(db, "Banned team")
     db.get(User, banned["id"]).banned = True
     scored(db, participant, 0.7, 0.5)
     rebuild(db)
@@ -441,8 +441,8 @@ def test_teams_without_a_score_are_listed_after_the_ranked_ones(client, db, part
 
 def test_ties_go_to_the_smaller_zip_then_the_earlier_submission(client, db, participant):
     from app.files import best_public_id
-    other = add_account(db, "Other team", "otherteam")
-    third = add_account(db, "Third team", "thirdteam")
+    other = add_account(db, "Other team")
+    third = add_account(db, "Third team")
     scored(db, participant, 0.8, 0.1, seconds=1, zip_bytes=900)
     smaller = scored(db, participant, 0.8, 0.9, seconds=4, zip_bytes=500)  # later, but the smaller ZIP
     scored(db, other, 0.8, 0.5, seconds=0, zip_bytes=700)                  # earliest, but a bigger ZIP
@@ -467,9 +467,9 @@ def graded(db, user, public, private, grading, **options):
 
 
 def test_grading_time_is_shown_but_never_breaks_a_tie(client, db, participant):
-    other = add_account(db, "Other team", "otherteam")
-    third = add_account(db, "Third team", "thirdteam")
-    untimed = add_account(db, "Untimed team", "untimedteam")
+    other = add_account(db, "Other team")
+    third = add_account(db, "Third team")
+    untimed = add_account(db, "Untimed team")
     graded(db, participant, 0.8, 0.5, 12.346, seconds=1, zip_bytes=500)
     graded(db, other, 0.8, 0.5, 12.345, seconds=5, zip_bytes=900)  # 1 ms faster, but a bigger ZIP
     graded(db, third, 0.7, 0.4, 1.0, zip_bytes=100)                # the fastest, but lower scores
@@ -490,7 +490,7 @@ def test_grading_time_is_shown_but_never_breaks_a_tie(client, db, participant):
 
 def test_team_keeps_the_smaller_zip_of_its_equal_best_submissions_however_slow(client, db, participant):
     from app.files import best_public_id
-    mate = add_account(db, participant["team_name"], "teammate")
+    mate = add_account(db, participant["team_name"])
     slower = graded(db, participant, 0.8, 0.1, 125.1, seconds=1, zip_bytes=500)
     faster = graded(db, mate, 0.8, 0.9, 12.3, seconds=4, zip_bytes=900)  # graded faster, but a bigger ZIP
     graded(db, participant, 0.7, 0.5, 1.0, seconds=2, zip_bytes=500)     # the fastest, but a lower score
@@ -525,7 +525,7 @@ def test_grading_time_covers_running_to_succeeded_only(client, db, participant):
     ("best_private", [("Protein Learners", 0.9), ("Other team", 0.6)]),
 ])
 def test_final_board_follows_the_configured_rule(client, db, participant, organizer, selection, expected):
-    other = add_account(db, "Other team", "otherteam")
+    other = add_account(db, "Other team")
     scored(db, participant, 0.8, 0.3)   # best Public of the team
     scored(db, participant, 0.5, 0.9)   # best Private of the team
     scored(db, other, 0.7, 0.6)

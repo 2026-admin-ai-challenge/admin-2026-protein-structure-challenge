@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app import zipcheck
-from app.accounts import generate_sheet, sync_sheet
+from app.accounts import create_user, generate_sheet, sync_sheet
 from app.evaluators import docker as docker_evaluator
 from app.models import AuditLog, Submission, Team, User
 from app.security import verify
@@ -112,59 +112,91 @@ def test_a_killed_submission_keeps_its_exit_code():
     assert done.returncode == 137
 
 
-def test_generated_sheet_has_ten_character_ids(db):
+def test_generated_sheet_has_a_password_per_team(db):
     lines = generate_sheet(10).strip().splitlines()
-    assert lines[0] == "team_name,username,password,display_name" and len(lines) == 11
-    usernames = [line.split(",")[1] for line in lines[1:]]
-    assert len(set(usernames)) == 10 and all(len(u) == 10 and u.isalnum() and u == u.lower() for u in usernames)
-    assert all(len(line.split(",")[2]) == 12 for line in lines[1:])
+    assert lines[0] == "team_name,password" and len(lines) == 11
+    assert [line.split(",")[0] for line in lines[1:3]] == ["Team 01", "Team 02"]
+    passwords = [line.split(",")[1] for line in lines[1:]]
+    assert len(set(passwords)) == 10 and all(len(password) == 12 for password in passwords)
 
 
 def test_account_sheet_is_the_editable_source_of_truth(db):
-    sheet = "team_name,username,password,display_name\nTeam 01,abcdefgh23,First-Pass-123,Team 01\nTeam 02,zyxwvuts45,Second-Pass-123,Team 02\n"
+    sheet = "team_name,password\nTeam 01,First-Pass-123\nTeam 02,Second-Pass-123\n"
     assert sync_sheet(db, sheet) == {"created": 2, "updated": 0, "unchanged": 0, "blocked": 0, "renamed_teams": 0}
     db.commit()
-    first = db.scalar(select(User).where(User.username == "abcdefgh23"))
+    first, second = db.scalars(select(User).order_by(User.id)).all()
     assert verify("First-Pass-123", first.password_hash) and "First-Pass-123" not in first.password_hash
+    assert db.get(Team, first.team_id).name == "Team 01" and first.display_name == "Team 01"
     db.add(Submission(user_id=first.id, team_id=first.team_id, filename="code.zip", status="queued"))
     assert sync_sheet(db, sheet)["unchanged"] == 2
 
-    # Edit the sheet: new password and a real team name for the first account.
-    edited = sheet.replace("First-Pass-123", "Changed-Pass-456").replace("Team 01,abc", "단백질팀,abc")
+    # Edit the sheet: a new password, and the team name spelled another way.
+    edited = sheet.replace("First-Pass-123", "Changed-Pass-456").replace("Team 01", "TEAM  01")
     summary = sync_sheet(db, edited)
     db.commit()
-    assert (summary["updated"], summary["renamed_teams"]) == (1, 1)
+    assert (summary["created"], summary["updated"], summary["unchanged"], summary["renamed_teams"]) == (0, 1, 1, 1)
     assert verify("Changed-Pass-456", first.password_hash) and not verify("First-Pass-123", first.password_hash)
-    assert db.get(Team, first.team_id).name == "단백질팀"
+    assert db.get(Team, first.team_id).name == "TEAM  01" and first.display_name == "TEAM  01"
     assert db.scalar(select(Submission.team_id)) == first.team_id  # submissions stayed with the team
 
     only_first = "\n".join(edited.splitlines()[:2]) + "\n"
     assert sync_sheet(db, only_first)["blocked"] == 0
     assert sync_sheet(db, only_first, exclusive=True)["blocked"] == 1
-    assert db.scalar(select(User).where(User.username == "zyxwvuts45")).banned is True
-    assert sync_sheet(db, edited)["updated"] == 1  # listing the account again unblocks it
+    assert second.banned is True
+    assert sync_sheet(db, edited)["updated"] == 1  # listing the team again unblocks it
+    assert second.banned is False and len(db.scalars(select(User)).all()) == 2
     log = db.scalars(select(AuditLog).where(AuditLog.action == "accounts.sync")).all()
     assert log and all("Pass" not in (entry.detail or "") for entry in log)
 
 
-def test_sheet_team_names_match_like_sign_in(db):
-    sync_sheet(db, "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\n")
-    team_id = db.scalar(select(User.team_id).where(User.username == "abcdefgh23"))
-    # A second account spelled with other case or spacing joins the same team, whose
-    # sign-in name takes the sheet's spelling.
-    summary = sync_sheet(db, "team_name,username,password\nTEAM  01,zyxwvuts45,Second-Pass-123\n")
-    assert (summary["created"], summary["renamed_teams"]) == (1, 1)
-    assert db.scalar(select(User.team_id).where(User.username == "zyxwvuts45")) == team_id
-    assert [team.name for team in db.scalars(select(Team))] == ["TEAM  01"]
+def test_older_sheets_load_and_their_ids_are_ignored(db):
+    sheet = "team_name,username,password,display_name\nTeam 01,abcdefgh23,First-Pass-123,Something else\n"
+    assert sync_sheet(db, sheet)["created"] == 1
+    user = db.scalar(select(User))
+    assert user.username != "abcdefgh23" and user.display_name == "Team 01"
+    # The same team under another old ID is still the same team.
+    assert sync_sheet(db, sheet.replace("abcdefgh23", "zyxwvuts45"))["unchanged"] == 1
+
+
+def test_a_name_changed_in_the_sheet_is_a_new_team(db):
+    sync_sheet(db, "team_name,password\nTeam 01,First-Pass-123\n")
+    summary = sync_sheet(db, "team_name,password\n단백질팀,First-Pass-123\n", exclusive=True)
+    assert (summary["created"], summary["blocked"], summary["renamed_teams"]) == (1, 1, 0)
+    assert [team.name for team in db.scalars(select(Team).order_by(Team.id))] == ["Team 01", "단백질팀"]
+
+
+def test_sheet_manages_one_account_of_a_team_that_has_two(db):
+    team = Team(name="Team 01")
+    db.add(team)
+    db.flush()
+    older, _ = create_user(db, team, password="Older-Pass-123")
+    newer, _ = create_user(db, team, password="Newer-Pass-123")
+    sheet = "team_name,password\nTeam 01,Sheet-Pass-123\n"
+    # The older account takes the sheet's password, and --exclusive blocks the other.
+    assert (sync_sheet(db, sheet, exclusive=True)["updated"], newer.banned) == (1, True)
+    assert verify("Sheet-Pass-123", older.password_hash) and not older.banned
+    # With the older one blocked instead, the sheet manages the one in use.
+    older.banned, newer.banned = True, False
+    assert sync_sheet(db, sheet.replace("Sheet", "Other"), exclusive=True)["blocked"] == 0
+    assert verify("Other-Pass-123", newer.password_hash) and older.banned and not newer.banned
+
+
+def test_sheet_never_touches_organizers(db, organizer):
+    with pytest.raises(ValueError, match="운영진 팀"):
+        sync_sheet(db, "team_name,password\nORGANIZERS,Some-Pass-123\n")
+    assert db.scalar(select(Team.name)) == "Organizers"  # refused before renaming it
+    with pytest.raises(ValueError, match="운영진 아이디"):
+        sync_sheet(db, "team_name,password\nOrganizer,Some-Pass-123\n")
 
 
 @pytest.mark.parametrize("sheet", [
     "username,password\nabcdefgh23,First-Pass-123\n",
-    # One team spelled two ways would make its sign-in name flip on every sync.
-    "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\nteam 01,zyxwvuts45,Other-Pass-123\n",
-    "team_name,username,password\nTeam 01,ab,First-Pass-123\n",
-    "team_name,username,password\nTeam 01,abcdefgh23,short\n",
-    "team_name,username,password\nTeam 01,abcdefgh23,First-Pass-123\nTeam 02,abcdefgh23,Other-Pass-123\n",
+    "team_name,username\nTeam 01,abcdefgh23\n",
+    # A team is one row; spelled two ways, its sign-in name would flip on every sync.
+    "team_name,password\nTeam 01,First-Pass-123\nTeam 01,Other-Pass-123\n",
+    "team_name,password\nTeam 01,First-Pass-123\nteam 01,Other-Pass-123\n",
+    "team_name,password\nT,First-Pass-123\n",
+    "team_name,password\nTeam 01,short\n",
 ])
 def test_bad_sheets_are_rejected(db, sheet):
     with pytest.raises(ValueError):

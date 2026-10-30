@@ -38,14 +38,7 @@ class TeamCreate(BaseModel):
 
 class UserCreate(BaseModel):
     team_id: int
-    # Omitted username: the server generates a random 10-character ID.
-    username: str | None = Field(default=None, max_length=64)
     display_name: str | None = Field(default=None, max_length=60)
-
-    @field_validator("username")
-    @classmethod
-    def valid_username(cls, v):
-        return clean_username(v) if v else None
 
     @field_validator("display_name")
     @classmethod
