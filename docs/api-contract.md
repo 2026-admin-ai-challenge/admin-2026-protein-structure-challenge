@@ -54,7 +54,7 @@
 | HTTP | `code` | 상황 |
 | --- | --- | --- |
 | 400 | `bad_request` | Content-Length가 숫자가 아님 |
-| 401 | — | 로그인 필요, 또는 비밀번호 재설정·팀 삭제로 세션 만료 |
+| 401 | — | 로그인 필요, 또는 비밀번호 재설정·변경, 팀 삭제로 세션 만료 |
 | 403 | `banned` | 차단된 계정 |
 | 403 | `closed` | 제출 기간이 아님 |
 | 413 | `zip_too_large` | 압축 ZIP이 상한 초과 |
@@ -67,11 +67,14 @@
 
 회원가입 API는 없습니다. 계정은 운영진만 만듭니다.
 
+참가 팀은 받은 비밀번호를 `POST /auth/password`로 직접 바꿀 수 있습니다. 바꾸면 그 계정의 다른 로그인(팀원·다른 기기)은 모두 풀리고, 요청한 세션만 새 쿠키로 이어집니다. 현재 비밀번호가 틀리면 400이고 틀린 시도는 계정당 분당 10회까지 받습니다(넘으면 429 `rate_limited`). 새 비밀번호가 8자 미만이거나 현재와 같으면 422입니다. 운영진 계정은 400이며 서버에서 `create_admin`으로 바꿉니다. 팀이 바꾼 비밀번호는 계정 시트를 다시 불러와도 덮어쓰지 않고(동기화 요약에 `team_passwords_kept`로 표시), 관리자가 재설정하면 다시 시트의 비밀번호를 따릅니다.
+
 | 메서드·경로 | 요청 | 응답 |
 | --- | --- | --- |
 | `POST /auth/login` | `{"username","password"}`: `username`에 **팀 이름**(운영진은 관리자 아이디도 가능) | 사용자 |
 | `POST /auth/logout` | — | `{"ok":true}` |
 | `GET /auth/me` | — | 사용자 |
+| `POST /auth/password` | `{"current_password","new_password"}`: 새 비밀번호 8~128자 | `{"ok":true}`와 새 세션 쿠키 |
 
 ```json
 {"id": 12, "username": "k7m2xq9rtd", "display_name": "Team 03", "team_id": 5, "team_name": "Team 03", "role": "USER"}

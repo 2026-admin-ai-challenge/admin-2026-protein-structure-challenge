@@ -27,6 +27,12 @@ class Login(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    # The minimum length is checked by the route, which can say it in Korean.
+    new_password: str = Field(min_length=1, max_length=128)
+
+
 class TeamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=60)
 

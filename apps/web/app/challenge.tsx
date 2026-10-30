@@ -4,6 +4,7 @@ import OverviewPanel from "./components/OverviewPanel";
 import SubmissionPanel from "./components/SubmissionPanel";
 import AdminPanel from "./components/AdminPanel";
 import AuthModal from "./components/AuthModal";
+import PasswordModal from "./components/PasswordModal";
 import LeaderboardPanel from "./components/LeaderboardPanel";
 import Protein from "./components/protein";
 import DataPanel from "./components/DataPanel";
@@ -27,6 +28,7 @@ import {
   Clock,
   Users,
   ShieldCheck,
+  KeyRound,
   LogOut,
   Plus,
 } from "lucide-react";
@@ -50,6 +52,7 @@ export default function Challenge({
     [data, setData] = useState<Competition | null>(null),
     [user, setUser] = useState<User | null>(null),
     [auth, setAuth] = useState(false),
+    [password, setPassword] = useState(false),
     [dark, setDark] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -146,6 +149,16 @@ export default function Challenge({
                   {user.team_name}
                   <ChevronDown size={13} />
                 </button>
+                {user.role !== "ADMIN" && (
+                  <button
+                    className="icon-btn"
+                    aria-label="비밀번호 변경"
+                    title="비밀번호 변경"
+                    onClick={() => setPassword(true)}
+                  >
+                    <KeyRound size={16} />
+                  </button>
+                )}
                 <button
                   className="icon-btn"
                   aria-label="로그아웃"
@@ -364,6 +377,18 @@ export default function Challenge({
               signedIn.role === "ADMIN"
                 ? "관리자로 로그인했습니다."
                 : `${signedIn.team_name} 팀으로 로그인했습니다.`,
+            );
+          }}
+        />
+      )}
+      {password && user && (
+        <PasswordModal
+          user={user}
+          onClose={() => setPassword(false)}
+          onChanged={() => {
+            setPassword(false);
+            setNotice(
+              "비밀번호를 바꿨습니다. 팀원과 다른 기기는 새 비밀번호로 다시 로그인해야 합니다.",
             );
           }}
         />
