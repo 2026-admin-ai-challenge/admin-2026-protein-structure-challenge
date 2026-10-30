@@ -18,10 +18,7 @@ def _rank_key(row, score):
 
 
 def ranked_users():
-    """Accounts whose submissions may take a rank: participants that are not banned.
-    Organizers' (ADMIN) test models are scored but never ranked. Applied when a board is
-    built and again when it is listed, so a board stored before a ban (or before organizers
-    were left out) never shows those teams."""
+    """Accounts whose submissions may take a rank: participants that are not banned."""
     return User.role == "USER", User.banned.is_(False)
 
 
@@ -39,7 +36,8 @@ def rebuild(db, board="public", selection="best_public"):
     public: each team's best Public score.
     private (final): with selection "best_public" the Private score of that same
     submission; with "best_private" each team's best Private score.
-    Submissions scored by a different evaluator (e.g. mock while running docker) are ignored.
+    Submissions scored by a different evaluator (e.g. mock while running docker) are ignored,
+    and so are organizers' (ADMIN accounts): their test models never take a rank.
     """
     rows = db.scalars(
         select(Submission)
@@ -65,6 +63,10 @@ def rebuild(db, board="public", selection="best_public"):
 
 
 def listing(db, board):
+    """The board as shown: ranked teams in order, then every other participating team
+    without a rank or score (no scored submission on this board yet), by name."""
+    # Filtered again so a board stored before a ban (or before organizers were left out)
+    # never shows those teams.
     rows = db.execute(
         select(LeaderboardEntry, Team.name, Submission)
         .join(Team, Team.id == LeaderboardEntry.team_id)
@@ -73,19 +75,17 @@ def listing(db, board):
         .where(LeaderboardEntry.board == board, *ranked_users())
     ).all()
     rows.sort(key=lambda found: _rank_key(found[2], found[0].score))
-    return [
+    ranked = [
         {"rank": i + 1, "team": name, "score": entry.score, "grading_seconds": submission.grading_seconds,
          "submissions": entry.submission_count, "last_submission": entry.last_submission}
         for i, (entry, name, submission) in enumerate(rows)
     ]
-
-
-def waiting(db, ranked):
-    """Every other participating team, listed below the ranked ones (`listing`) by name,
-    without a rank or score: no scored submission on this board yet."""
-    on_board = {entry["team"] for entry in ranked}
-    names = db.scalars(select(Team.name).join(User, User.team_id == Team.id).where(*ranked_users()).distinct()).all()
-    return [
+    on_board = [entry.team_id for entry, _, _ in rows]
+    waiting = db.scalars(
+        select(Team.name).join(User, User.team_id == Team.id)
+        .where(*ranked_users(), Team.id.not_in(on_board)).distinct()
+    ).all()
+    return ranked + [
         {"rank": None, "team": name, "score": None, "grading_seconds": None, "submissions": 0, "last_submission": None}
-        for name in sorted(names) if name not in on_board
+        for name in sorted(waiting)
     ]

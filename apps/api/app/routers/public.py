@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from ..config import DATA_DIR
 from ..dataset import MEDIA_TYPES, PUBLIC_FILES, metadata, public_metadata
 from ..db import get_db
-from ..leaderboard import listing, waiting
+from ..leaderboard import listing
 from ..models import Settings, Submission, User
 from ..security import optional_user
 from .common import dataset_available, evaluator_name, launched, limits_view, settings_view, submission_open
@@ -70,6 +70,5 @@ def leaderboard(board: str = "public", db=Depends(get_db)):
     settings = db.get(Settings, 1)
     if board == "final" and not settings.finalized:
         raise HTTPException(403, "최종 순위는 대회 종료 후 공개됩니다.")
-    ranked = listing(db, "private" if board == "final" else "public")
     return {"board": board, "frozen": settings.frozen, "evaluator": evaluator_name(),
-            "entries": ranked + waiting(db, ranked)}
+            "entries": listing(db, "private" if board == "final" else "public")}
