@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
 
@@ -15,12 +16,32 @@ from .db import get_db
 from .errors import ApiError
 from .models import RateBucket, User
 
+# Each hash holds memory_cost of RAM while it runs, and the C allocator keeps what a thread
+# freed for that thread. Sign-ins run on whichever of the request threads is free, so in the
+# load test of 2026-10-31, 33 sign-ins at once took the API from 88 to 695 MiB and it kept
+# it: the 954 MiB server could only put it in swap, and the API stalled for minutes. Two
+# threads of their own do every hash instead, so at most two hashes' worth is ever held;
+# the rest wait their turn, tens of milliseconds each.
+HASHING_AT_ONCE = 2
+_hashing = ThreadPoolExecutor(max_workers=HASHING_AT_ONCE, thread_name_prefix="argon2")
+
+
+class QueuedHasher(PasswordHasher):
+    """A PasswordHasher whose hashes all run on the HASHING_AT_ONCE threads of _hashing."""
+
+    def hash(self, password, *, salt=None):
+        return _hashing.submit(super().hash, password, salt=salt).result()
+
+    def verify(self, hash, password):
+        return _hashing.submit(super().verify, hash, password).result()
+
+
 # Tuned for the one-OCPU web server. The library's defaults (t=3, m=64 MiB, p=4) measured
 # about 2.5 s a sign-in there, because four lanes share one core, and each hash in flight
 # holds 64 MiB of a 954 MiB machine. These are OWASP's recommended floor and cost about a
 # fifth of the work. Parameters live inside each hash, so passwords hashed with the old
 # settings still verify; sync_accounts re-hashes them (accounts.py).
-hasher = PasswordHasher(time_cost=2, memory_cost=19 * 1024, parallelism=1)
+hasher = QueuedHasher(time_cost=2, memory_cost=19 * 1024, parallelism=1)
 DUMMY_HASH = hasher.hash("never-a-valid-password")
 
 

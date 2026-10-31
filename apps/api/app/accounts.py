@@ -57,6 +57,9 @@ def team_account(db, team_name, password):
     team = find_team(db, team_name)
     members = db.scalars(select(User).where(User.team_id == team.id, User.banned.is_(False))
                          .order_by(User.id)).all() if team else []
+    # A hash may wait its turn (security.QueuedHasher): hand the database connection back
+    # first, so sign-ins in line do not hold the pool every other request needs.
+    db.commit()
     if not members:
         verify(password, DUMMY_HASH)  # an unknown team takes as long as a wrong password
         return None
