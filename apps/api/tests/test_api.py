@@ -381,8 +381,15 @@ def test_competition_info_does_not_name_the_topic(client, db):
     assert "title" not in response.json() and "protein" not in response.text.lower()
 
 
+def test_dataset_download_opens_no_database_session():
+    # A session here stays open until the whole file is sent, so downloads emptied the pool.
+    from app.routers.public import router
+    route = next(r for r in router.routes if r.path == "/api/datasets/{kind}")
+    assert route.dependant.dependencies == []
+
+
 @pytest.mark.parametrize("kind", PARTICIPANT_FILES)
-def test_dataset_release_window_and_approval(client, db, monkeypatch, kind):
+def test_release_window_and_approval_drive_the_data_tab(client, db, monkeypatch, kind):
     from datetime import datetime, timezone
     import app.routers.common as common
     stamp = datetime(2026, 10, 24, 0, 0, tzinfo=timezone.utc)
@@ -399,14 +406,16 @@ def test_dataset_release_window_and_approval(client, db, monkeypatch, kind):
     for opened, start, end, version, expected in cases:
         settings.is_open, settings.start_time, settings.end_time, settings.dataset_version = opened, start, end, version
         db.commit()
+        # The file itself is served in every case; only the Data tab follows the schedule.
         response = client.get("/api/datasets/" + kind, headers={"Range": "bytes=0-9", "If-None-Match": "anything"})
-        assert response.status_code in ([200, 206] if expected else [403])
+        assert response.status_code in [200, 206]
         assert response.headers["cache-control"] == "no-store"
         info = client.get("/api/competition").json()
         assert info["dataset_available"] == expected and (info["dataset"] is not None) == expected
     settings.is_open, settings.finalized = True, True
     db.commit()
-    assert client.get("/api/datasets/" + kind).status_code == 403
+    assert client.get("/api/competition").json()["dataset_available"] is False
+    assert client.get("/api/datasets/" + kind).status_code == 200
 
 
 def test_public_baseline_is_code_only_even_when_competition_closed(client, db):
@@ -419,8 +428,8 @@ def test_public_baseline_is_code_only_even_when_competition_closed(client, db):
     assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         assert set(archive.namelist()) == {"baseline.py", "structure_features.py", "baseline.ipynb", "README.md", "structure-format.md", "requirements.txt"}
-    for kind in PARTICIPANT_FILES:
-        assert client.get("/api/datasets/" + kind).status_code == 403
+    for kind in PARTICIPANT_FILES:  # served without a schedule check (download_dataset)
+        assert client.get("/api/datasets/" + kind).status_code == 200
     assert client.get("/api/competition").json()["dataset"] is None
     assert client.get("/api/resources/starter-kit").status_code == 404
 

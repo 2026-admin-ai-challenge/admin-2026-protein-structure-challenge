@@ -52,11 +52,13 @@ def public_baseline(user=Depends(optional_user)):
 
 
 @router.get("/datasets/{kind}")
-def download_dataset(kind: str, db=Depends(get_db)):
+def download_dataset(kind: str):
+    # No database here. FastAPI closes a request's session only after the whole file is sent,
+    # so checking the release window held a pooled connection for every download; on 10-31 a
+    # handful of slow downloads took all of them and every page failed. The files are served
+    # whatever the schedule says; the Data tab shows the links only while `dataset_available`.
     if kind not in PUBLIC_FILES:
         raise HTTPException(404, "파일을 찾을 수 없습니다.")
-    if not dataset_available(db.get(Settings, 1)):
-        raise HTTPException(403, "데이터셋은 운영진 승인 후 대회 시작부터 종료 시각까지만 공개됩니다.")
     path = DATA_DIR / "public" / PUBLIC_FILES[kind]
     if not path.exists():
         raise HTTPException(503, "데이터셋을 준비 중입니다.")
