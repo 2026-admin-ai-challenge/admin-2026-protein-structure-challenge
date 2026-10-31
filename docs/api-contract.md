@@ -104,7 +104,7 @@
 }
 ```
 
-- `submission_open`: 지금 제출을 받는지. `dataset_available`: 지금 학습 데이터를 받을 수 있는지(기간 + 관리자 승인).
+- `submission_open`: 지금 제출을 받는지. `dataset_available`: 데이터 탭에 다운로드 버튼을 보여 줄지(기간 + 관리자 승인). 파일(`GET /datasets/{kind}`)은 이 값과 관계없이 받을 수 있습니다.
 - `dataset`은 `metadata.json` 중 `version`, `labels`, `stats`, `files`만 담습니다(허용 목록). seed·분할 설정 등 다른 키는 공개하지 않습니다. `stats`도 `classes`, `train`, `test`만 남깁니다. 클래스별 전체 개수(`samples_per_class`)는 학습과 평가를 합친 값이라, 공개된 학습 데이터를 빼면 숨긴 평가 데이터의 클래스 분포가 드러나므로 공개하지 않습니다. `files`도 내려받을 수 있는 파일만 남깁니다.
 - 화면의 용량·시간·횟수 문구는 **반드시 `limits`에서** 읽습니다. 숫자를 화면에 직접 쓰지 않습니다.
 - `evaluator`가 `mock`이면 점수가 가짜임을 화면에 표시합니다.
@@ -121,7 +121,7 @@
 
 관리자(ADMIN) 계정의 제출은 순위에 들어가지 않습니다. 이 보드에 점수가 없는 참가 팀(차단·관리자 팀 제외)도 순위 뒤에 팀 이름 순으로 `rank`·`score`가 `null`인 항목으로 나옵니다. 웹은 순위를 "—", 점수를 0으로 표시합니다. 웹 리더보드는 화면이 보이는 동안 이 응답을 10초마다 다시 받아 순위 변화를 애니메이션으로 보여 주고, 순위가 동결되면 다시 받지 않습니다.
 
-`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`과 공개 예제 `example-input`(`example_input.csv`), `example-features`(`example_features.csv`), `example-structures`(`example_structures.zip`), `example-output`(`example_output.csv`)입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
+`final`은 최종 공개 전까지 403입니다. `GET /datasets/{kind}`의 `kind`는 `train`, `train-features`, `train-structures`, `validation-split`과 공개 예제 `example-input`(`example_input.csv`), `example-features`(`example_features.csv`), `example-structures`(`example_structures.zip`), `example-output`(`example_output.csv`)입니다. 일정·승인을 확인하지 않고 항상 파일을 돌려줍니다. DB를 읽으면 그 연결이 전송이 끝날 때까지 묶이기 때문입니다. 평가 입력에 해당하는 경로는 없습니다(404). 데이터팀 분석 차트(`class_distribution.png`, `sequence_length_distribution.png`)는 발표용이라 참가자에게 제공하지 않습니다(404).
 
 `GET /resources/baseline`은 데이터 없이 코드만 담은 베이스라인 ZIP입니다. 대회 기간과 상관없이 받을 수 있지만, 코드에 대회 주제가 드러나므로 `LAUNCH_AT` 전에는 관리자만 받고 나머지는 403입니다.
 
