@@ -22,6 +22,7 @@ def login(body: Login, request: Request, response: Response, db=Depends(get_db))
     name = body.username.strip()
     admin = db.scalar(select(User).where(User.username == name.lower(), User.role == "ADMIN"))
     if admin:
+        db.commit()  # the connection goes back to the pool while the hash waits its turn
         # Organizer IDs are never locked out of signing in.
         user = admin if verify(body.password, admin.password_hash) else None
     else:

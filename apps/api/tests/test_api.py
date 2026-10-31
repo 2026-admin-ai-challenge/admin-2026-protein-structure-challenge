@@ -285,6 +285,29 @@ def test_organizer_login_is_never_rate_limited(client, organizer, monkeypatch):
     assert client.post("/api/auth/login", json={"username": "organizer", "password": "longpassword123"}).status_code == 200
 
 
+def test_sign_ins_hash_on_two_threads_of_their_own(client, participant, organizer, monkeypatch):
+    """A hash holds 19 MiB, and the C allocator keeps what a thread freed for that thread, so
+    hashing on the request threads left that much behind in each of them (load test 2026-10-31)."""
+    import threading
+
+    from argon2 import PasswordHasher
+
+    from app.security import HASHING_AT_ONCE
+    stop_the_clock(monkeypatch)
+    threads, original = set(), PasswordHasher.verify
+
+    def watched(self, hash, password):
+        threads.add(threading.current_thread().name)
+        return original(self, hash, password)
+
+    monkeypatch.setattr(PasswordHasher, "verify", watched)
+    for name, password in [(participant["team_name"], participant["password"]), (participant["team_name"], "NotCorrect123"),
+                           ("no such team", "NotCorrect123"), ("organizer", "longpassword123")]:
+        client.post("/api/auth/login", json={"username": name, "password": password})
+    assert threads and len(threads) <= HASHING_AT_ONCE
+    assert all(name.startswith("argon2") for name in threads), threads
+
+
 def test_upload_rate_limit_and_banned_account_carry_codes(client, db, participant, organizer, monkeypatch):
     stop_the_clock(monkeypatch)
     # Neither uses an attempt, and a client can tell them from limit_reached and closed.
