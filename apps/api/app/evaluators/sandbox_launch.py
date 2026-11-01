@@ -24,7 +24,10 @@ its command rewritten to the run directory's. It still gets a clean environment,
 this launcher runs as root, it runs as spec["run_uid"], an unprivileged user of its own
 with spec["tasks"] processes at most, so it cannot change the scoring environment or
 another run; every process of that user is killed when the step ends. It can reach the
-network and read whatever that user may read.
+network and read whatever that user may read. With spec["netns"], every step but
+install-online starts in a user and a network namespace of its own (`unshare --user --net`):
+only a loopback that is down, so no network at all. That needs unprivileged user namespaces
+but no mounts, so it works in a container that still forbids bwrap.
 
 Exit status: the step's own, but 125 when the sandbox could not start (the machine's
 fault, never the team's), 137 when this launcher's timer stopped it and 124 when the
@@ -192,8 +195,9 @@ def plan(spec, prefix, look=look, devices=(), home="", bwrap="bwrap"):
 
 
 def plan_direct(spec, home=""):
-    """(argv, working directory) of one step without isolation: env -i VARIABLES sh -c STARTED
-    sh COMMAND, where every sandbox path in COMMAND is replaced by the run directory's."""
+    """(argv, working directory) of one step without isolation: [unshare --user --net] env -i
+    VARIABLES sh -c STARTED sh COMMAND, where every sandbox path in COMMAND is replaced by the
+    run directory's."""
     mode, root, run = spec["mode"], spec["root"], spec["run"]
     env_dir = f"{root}/env"
     places = (("/submission", f"{run}/submission"), ("/input", spec["input"]), ("/output", f"{run}/output"), ("/deps", f"{run}/deps"))
@@ -232,6 +236,11 @@ def plan_direct(spec, home=""):
     else:
         fail(f"unknown step {mode!r}")
     argv = ["env", "-i", *(f"{key}={value}" for key, value in sorted(variables.items())), "/bin/sh", "-c", STARTED, "sh", *command]
+    if spec.get("netns") and mode != "install-online":
+        # Started after become(): the namespaces belong to the step's own user, who stays the
+        # same uid outside them, so kill_user still finds every process. If unshare fails, the
+        # step never writes its start mark and the run is the machine's fault, never open.
+        argv = ["unshare", "--user", "--net", *argv]
     return argv, workdir
 
 

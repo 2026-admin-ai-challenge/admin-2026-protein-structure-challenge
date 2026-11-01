@@ -45,6 +45,9 @@ services:
       EVAL_SANDBOX_LIMITS: ${EVAL_SANDBOX_LIMITS:-cgroup}
       # sandbox with isolation turned off on the admin page, as root: the uid steps run as.
       EVAL_SANDBOX_RUN_UID: ${EVAL_SANDBOX_RUN_UID:-64000}
+      # sandbox with isolation off: 1 runs every step but the online install without network
+      # (unshare --user --net), for a machine that allows user namespaces but not bwrap.
+      EVAL_SANDBOX_NETNS: ${EVAL_SANDBOX_NETNS:-}
       # remote only. Built by .github/workflows/evaluator-image.yml. Pin a commit tag in .env so
       # the scoring environment cannot change in the middle of the competition.
       EVAL_IMAGE: ${EVAL_IMAGE:-ghcr.io/2026-admin-ai-challenge/admin-2026-protein-structure-challenge/evaluator:latest}

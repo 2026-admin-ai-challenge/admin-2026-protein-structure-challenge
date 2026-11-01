@@ -360,6 +360,49 @@ def test_without_isolation_the_install_uses_no_shared_cache():
     assert environment["PIP_NO_CACHE_DIR"] == "1" and "PIP_CACHE_DIR" not in environment and workdir == f"{RUN}/tmp"
 
 
+@pytest.mark.parametrize("mode, wrapped", [("infer", True), ("probe", True), ("install-offline", True), ("install-online", False)])
+def test_with_netns_every_step_but_the_online_install_starts_without_network(mode, wrapped):
+    extra = {"command": ["python"]} if mode in ("infer", "probe") else {"requirements": ["lightgbm==4.7.0"]}
+    argv, _ = launch.plan_direct(step(mode, isolation=False, netns=True, **extra))
+    assert (argv[:3] == ["unshare", "--user", "--net"]) == wrapped
+    assert argv[3 if wrapped else 0:][:2] == ["env", "-i"]
+    plain, _ = launch.plan_direct(step(mode, isolation=False, **extra))
+    assert plain[:2] == ["env", "-i"]  # without EVAL_SANDBOX_NETNS nothing changes
+
+
+def test_netns_is_sent_only_without_isolation(monkeypatch, configured):
+    monkeypatch.setattr(sandbox, "NETNS", True)
+    assert sandbox.spec("infer", RUN, 10, isolation=False)["netns"] is True
+    assert "netns" not in sandbox.spec("infer", RUN, 10)
+    monkeypatch.setattr(sandbox, "NETNS", False)
+    assert sandbox.spec("infer", RUN, 10, isolation=False)["netns"] is False
+
+
+def test_with_netns_the_probe_must_find_no_network_again(monkeypatch, configured):
+    monkeypatch.setattr(sandbox, "NETNS", True)
+    problems = failed(sandbox.probe_checks(0, probe(network="open"), "", isolation=False))
+    assert set(problems) == {"sandbox_network"} and "EVAL_SANDBOX_NETNS" in problems["sandbox_network"].reason
+    assert not failed(sandbox.probe_checks(0, probe(network="blocked"), "", isolation=False))
+    # A machine that forbids user namespaces: the step never starts, so nothing is scored with the network open.
+    fault = failed(sandbox.probe_checks(125, "", "unshare: unshare failed: Operation not permitted\n", isolation=False))
+    assert set(fault) == {"sandbox"} and "unshare --user --net" in fault["sandbox"].fix
+
+
+def test_with_netns_the_worker_says_the_network_is_blocked(monkeypatch, configured):
+    monkeypatch.setattr(sandbox, "NETNS", True)
+    sent = scripted(monkeypatch, (0, check_output(**CNU_CONTAINER), ""), (0, probe(network="blocked"), ""))
+    evaluator = SandboxEvaluator()
+    evaluator.configure(types.SimpleNamespace(eval_isolation=False))
+    ok, detail = evaluator.ready()
+    assert ok and "격리 꺼짐(네트워크 차단(온라인 설치 제외), 파일 접근 제한 없음" in detail
+    assert json.loads(_probe_spec(sent[1]))["netns"] is True
+
+
+def test_the_probe_tries_more_than_one_address():
+    # The CNU container refused 1.1.1.1 on every port while the rest of the internet was open.
+    assert all(f'("{host}", {port})' in sandbox.PROBE for host, port in (("1.1.1.1", 53), ("8.8.8.8", 443), ("9.9.9.9", 443)))
+
+
 def test_docker_style_limits_become_systemd_ones(monkeypatch, configured):
     monkeypatch.setattr(local, "CPUS", "1.5")
     monkeypatch.setattr(local, "PIDS", "256")
@@ -571,6 +614,19 @@ def test_without_isolation_the_probe_finds_the_input_where_a_submission_would(ma
     done, _ = launch_step(machine, mode="probe", command=sandbox.PROBE_COMMAND, isolation=False)
     report = json.loads(done.stdout.decode().split("probe=", 1)[1])
     assert report["input"] is True, done.stderr
+
+
+def _netns_works():
+    if os.name == "nt" or not shutil.which("unshare"):
+        return False
+    return subprocess.run(["unshare", "--user", "--net", "true"], capture_output=True).returncode == 0
+
+
+@pytest.mark.skipif(not _netns_works(), reason="needs unprivileged user and network namespaces")
+def test_with_netns_a_real_step_finds_no_network_but_its_input(machine):
+    done, _ = launch_step(machine, mode="probe", command=sandbox.PROBE_COMMAND, isolation=False, netns=True)
+    report = json.loads(done.stdout.decode().split("probe=", 1)[1])
+    assert report["network"] == "blocked" and report["input"] is True, done.stderr
 
 
 def test_without_isolation_a_process_left_behind_is_killed(machine):

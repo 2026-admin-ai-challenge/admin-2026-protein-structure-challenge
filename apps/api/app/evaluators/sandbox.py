@@ -31,6 +31,10 @@ of its own that cannot change the scoring environment or another run, and every 
 that user is killed after each step. Workers sharing a GPU machine therefore each need their
 own uid: the slots of WORKER_SLOTS get EVAL_SANDBOX_RUN_UID + slot - 1 (app.worker). The checks skip
 bwrap, user namespaces and the cgroup limits, and the probe proves only the input and the GPU.
+EVAL_SANDBOX_NETNS=1 gives back the network part: every step but the online install then runs
+in a network namespace of its own (`unshare --user --net`, see sandbox_launch.py), for a
+container that allows user namespaces but not the mounts bwrap needs, and the probe must find
+no network again.
 
     python -m app.evaluators.sandbox     # run the checks by hand and print the result
     python -m app.evaluators.sandbox --no-isolation
@@ -53,6 +57,8 @@ ROOT = os.getenv("EVAL_SANDBOX_ROOT", "").strip().rstrip("/")
 LIMITS = os.getenv("EVAL_SANDBOX_LIMITS", "cgroup").strip().lower()
 # Without isolation, when the SSH account is root: the uid steps run as. No account needs it.
 RUN_UID = int(os.getenv("EVAL_SANDBOX_RUN_UID", "64000"))
+# Without isolation: steps (but the online install) in a network namespace of their own.
+NETNS = os.getenv("EVAL_SANDBOX_NETNS", "").strip().lower() in ("1", "true", "yes", "on")
 LAUNCHER = Path(__file__).with_name("sandbox_launch.py").read_text(encoding="utf-8")
 MARKER = "admin-eval-sandbox"
 FAULT = 125
@@ -126,12 +132,15 @@ df -Pk "$WORK" 2>/dev/null | awk 'NR==2 {print "free_kb=" $4}'
 # launcher rewrites it without isolation), argv[2] the account's ~/.ssh, which must not be visible.
 PROBE = r"""
 import json, os, socket, sys
-result = {"input": os.access(sys.argv[1], os.R_OK), "ssh_visible": os.path.exists(sys.argv[2])}
-try:
-    socket.create_connection(("1.1.1.1", 53), timeout=3).close()
-    result["network"] = "open"
-except OSError:
-    result["network"] = "blocked"
+result = {"input": os.access(sys.argv[1], os.R_OK), "ssh_visible": os.path.exists(sys.argv[2]), "network": "blocked"}
+# More than one address: a machine may refuse one of them and still let everything else out.
+for address in (("1.1.1.1", 53), ("8.8.8.8", 443), ("9.9.9.9", 443)):
+    try:
+        socket.create_connection(address, timeout=3).close()
+        result["network"] = "open"
+        break
+    except OSError:
+        pass
 try:
     import torch
     result["torch"] = torch.__version__
@@ -204,7 +213,7 @@ def spec(mode, run, seconds, pidfile=None, isolation=True, run_uid=None, **extra
     if isolation:
         step["limits"] = limits()
     else:
-        step.update(limits=None, run_uid=RUN_UID if run_uid is None else run_uid, tasks=tasks())
+        step.update(limits=None, run_uid=RUN_UID if run_uid is None else run_uid, tasks=tasks(), netns=NETNS)
     return {**step, **extra}
 
 
@@ -300,6 +309,9 @@ def probe_checks(code, out, err, isolation=True):
     if code == FAULT:
         fix = (f"서버에서 bwrap 오류를 확인하세요. user namespace, AppArmor, systemd-run이 원인인 경우가 많습니다. {USERNS_FIX}" if isolation else
                f"오류 내용을 확인하세요. 접속 계정이 root면 채점 폴더와 평가 입력을 uid {RUN_UID}가 읽을 수 있어야 합니다({SETUP}가 그렇게 만듭니다).")
+        if not isolation and NETNS:
+            fix += (" EVAL_SANDBOX_NETNS=1이면 서버가 비특권 user namespace를 허용해야 합니다(`unshare --user --net true`로 확인). "
+                    "허용하지 않는 서버라면 `.env`에서 EVAL_SANDBOX_NETNS를 지우세요. 그러면 제출 코드가 네트워크에 접근할 수 있습니다.")
         return [Check("sandbox", False, f"{where}에서 점검 프로그램을 시작하지 못했습니다: {remote._first_line(err) or '이유 없음'}", fix)]
     if code == 137:
         return [Check("sandbox", False, f"{where} 점검이 {PROBE_SECONDS}초 안에 끝나지 않았습니다.", "서버가 지나치게 바쁜지 확인하세요.")]
@@ -313,6 +325,9 @@ def probe_checks(code, out, err, isolation=True):
     checks = []
     if isolation and result.get("network") != "blocked":
         checks.append(Check("sandbox_network", False, "샌드박스 안에서 네트워크가 열려 있습니다.", "bwrap이 0.4 이상인지, --unshare-net이 동작하는지 확인하세요."))
+    elif not isolation and NETNS and result.get("network") != "blocked":
+        checks.append(Check("sandbox_network", False, f"{where}에서 EVAL_SANDBOX_NETNS=1인데 네트워크가 열려 있습니다.",
+                            "서버에서 `unshare --user --net`이 새 network namespace를 만드는지 확인하세요."))
     if isolation and result.get("ssh_visible"):
         checks.append(Check("sandbox_files", False, "샌드박스 안에서 접속 계정의 ~/.ssh가 보입니다.",
                             "채점 환경과 그 Python을 홈 폴더 자체가 아닌 하위 폴더(EVAL_SANDBOX_ROOT)에 두세요."))
@@ -416,7 +431,8 @@ class SandboxEvaluator(remote.RemoteEvaluator):
         names = remote.gpu_summary(facts["gpus"]) if local.GPUS else ""
         if not self._isolation:
             runner = f"uid {self.run_uid}로 실행" if facts["root"] else "접속 계정으로 실행"
-            bounds = f"격리 꺼짐(네트워크·파일 접근 제한 없음, {runner}, {local.PIDS} pids)"
+            access = "네트워크 차단(온라인 설치 제외), 파일 접근 제한 없음" if NETNS else "네트워크·파일 접근 제한 없음"
+            bounds = f"격리 꺼짐({access}, {runner}, {local.PIDS} pids)"
         elif LIMITS == "cgroup":
             bounds = f"{local.CPUS} cpus, {local.MEMORY} memory, {local.PIDS} pids"
         else:
